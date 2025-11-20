@@ -43,6 +43,21 @@
 - [ ] CHK-ERR-007 Run error test suite: `go test -v -run "TestAll.*Errors"`
 - [ ] CHK-ERR-008 Confirm 100% error test coverage (no untested errors)
 
+## Continuous Test Verification *(MANDATORY per Constitution Principle XI)*
+
+**Note**: AI agents MUST run tests locally after ALL code changes
+
+- [ ] CHK-TEST-001 Verify AI agent ran full test suite after implementation
+- [ ] CHK-TEST-002 Verify all tests pass (green) - NO task completion with failing tests
+- [ ] CHK-TEST-003 Verify tests with race detector pass (concurrency safety)
+- [ ] CHK-TEST-004 Verify test coverage is maintained or improved
+- [ ] CHK-TEST-005 Verify AI agent ran tests after refactoring changes
+- [ ] CHK-TEST-006 Verify integration tests pass with real database (testcontainers)
+- [ ] CHK-TEST-007 Verify no tests were skipped or disabled to complete task
+- [ ] CHK-TEST-008 Verify flaky tests are fixed (not ignored)
+- [ ] CHK-TEST-009 Verify test failures were reported and fixed
+- [ ] CHK-TEST-010 Verify task only marked complete after all tests passed
+
 ## Notes
 
 - Check items off as completed: `[x]`

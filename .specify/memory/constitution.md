@@ -1,9 +1,48 @@
 <!--
-Version: 1.0.0
+SYNC IMPACT REPORT - Constitution Update
+
+Version Change: 1.0.0 → 1.1.0
+
+Modified Principles:
+- None (existing principles unchanged)
+
+Added Sections:
+- NEW Principle XI: Continuous Test Verification
+  - Mandates AI agents run tests locally after all code changes
+  - Prevents regressions and ensures quality gates
+  - Focuses on automated test execution by AI (not manual commands or CI/CD)
+- Updated Development Workflow section
+  - Added "Run Tests" as mandatory step after implementation
+  - Added test verification requirements for AI agents
+
+Removed Sections:
+- None
+
+Templates Requiring Updates:
+- ✅ tasks-template.md - Updated (added test verification tasks in Phase N polish section)
+- ✅ checklist-template.md - Updated (added "Continuous Test Verification" section with 10 checklist items)
+- ✅ spec-template.md - No changes needed (already requires comprehensive testing)
+- ✅ plan-template.md - No changes needed (constitution check validates all principles)
+
+Documentation Updates:
+- ✅ README.md - Updated (version 1.0.0 → 1.1.0, added Principle XI to constitution summary)
+
+Follow-up TODOs:
+- None (all placeholders resolved, all dependent artifacts updated)
+
+Change Type: MINOR (new principle added)
+Rationale: Adding continuous test verification as a non-negotiable principle ensures code quality,
+prevents regressions, and enforces the test-first culture. This is a material expansion of development
+discipline that changes team workflow expectations.
+
+---
+
+Version: 1.1.0
 Date: 2025-11-20
-Changes: Initial release as template starter for Go projects
-Rationale: Comprehensive constitution for Go API development with integration testing, protobuf, tracing, and service architecture
-Status: Template ready for new projects
+Changes: Added Principle XI (Continuous Test Verification) - MINOR version bump
+Rationale: Enforce continuous testing discipline to prevent regressions and maintain code quality
+Status: Active - mandates running tests after all code changes
+Previous Version: 1.0.0 (2025-11-20) - Initial release
 -->
 
 
@@ -1453,6 +1492,39 @@ func (s *productService) BulkUpdate(ctx context.Context, updates []*pb.ProductUp
 }
 ```
 
+### XI. Continuous Test Verification
+
+All code changes MUST be verified by running tests immediately after implementation:
+- Tests MUST be executed after every code change before committing
+- Tests MUST pass before any commit to version control
+- Integration tests MUST be run locally using testcontainers before pushing
+- Developers MUST verify tests pass in their local environment first
+- CI/CD pipeline MUST block merges if tests fail
+- Tests MUST be run after bug fixes to verify the fix and prevent regressions
+- Tests MUST be run after refactoring to ensure behavior is preserved
+- NO code changes MUST be committed without running the test suite
+- Test execution MUST be automated in pre-commit hooks where possible
+- Test failures MUST be fixed immediately before proceeding with new work
+- Developers MUST NOT skip or disable tests to "temporarily" fix CI/CD
+- Test execution time MUST be monitored and optimized if it impacts development velocity
+
+**Rationale**: Running tests continuously after code changes is the only reliable way to catch regressions early, ensure code quality gates are maintained, and prevent broken code from reaching production. This practice creates a tight feedback loop that catches issues when context is fresh and fixes are cheap. Without continuous test verification, even comprehensive test suites become worthless because passing tests from yesterday don't guarantee today's changes work correctly. This principle transforms testing from a checkbox activity into a living quality gate that protects the codebase at every step. Test-first development (TDD) is valuable, but continuous verification ensures the tests continue passing as the code evolves.
+
+**AI Implementation Requirement**:
+- AI agents MUST run the full test suite (`go test -v ./...`) after making any code changes
+- AI agents MUST verify all tests pass before completing the task
+- AI agents MUST report test failures and fix them before proceeding
+- AI agents MUST run tests with race detector (`go test -v -race ./...`) for concurrency safety
+- AI agents MUST NOT skip or disable failing tests to complete a task
+- AI agents MUST treat test failures as blocking issues that require immediate resolution
+
+**Test Execution Requirements**:
+- Full test suite MUST pass before task completion
+- Tests MUST include integration tests with real database (testcontainers)
+- Race detector MUST be used to catch concurrency issues
+- Test coverage MUST be maintained or improved
+- Flaky tests MUST be fixed immediately (not ignored or re-run)
+
 
 ## Technology Stack
 
@@ -1478,8 +1550,14 @@ func (s *productService) BulkUpdate(ctx context.Context, updates []*pb.ProductUp
 4. **Verify Failure**: Run tests to confirm they fail (red phase)
 5. **Review Tests**: Review test design with team/lead before implementation
 6. **Implement**: Write minimal code to make tests pass (green phase)
-7. **Refactor**: Improve code quality while keeping tests green
-8. **No Implementation Before Tests**: Code written before test approval MUST be discarded
+7. **Run Tests**: Execute full test suite immediately after implementation (MANDATORY per Principle XI)
+8. **Verify Success**: Confirm all tests pass (green phase)
+9. **Refactor**: Improve code quality while keeping tests green
+10. **Run Tests Again**: Execute tests after each refactoring change (MANDATORY per Principle XI)
+11. **Complete Task**: Task is only complete when all tests pass
+12. **No Implementation Before Tests**: Code written before test approval MUST be discarded
+
+**Critical**: Steps 7, 8, 10, and 11 enforce Principle XI (Continuous Test Verification). AI agents MUST run tests after EVERY code change and verify they pass before task completion.
 
 ### Protobuf Workflow
 
@@ -1798,9 +1876,17 @@ All pull requests MUST be reviewed against these constitutional requirements, or
 - Reviewers MUST verify context cancellation checks in Create/long-running operations
 - Tests MUST verify context cancellation behavior where applicable
 
+**Principle XI: Continuous Test Verification**
+- Pull request MUST show evidence that AI agent ran tests and they passed
+- Reviewers MUST reject PRs with disabled or skipped tests (unless justified in PR description)
+- Reviewers MUST verify test execution time is reasonable (flag if tests take >5 minutes)
+- Reviewers MUST verify flaky tests are fixed (not just re-run until they pass)
+- Reviewers MUST verify AI agent ran tests after code changes (check commit messages/PR description)
+
 **General**
 - Tests MUST be reviewed before implementation code (TDD workflow)
 - Reviewers MUST verify GORM is used for database access (no raw SQL unless justified)
+- ALL tests MUST pass before code review approval (no exceptions)
 
 ## Governance
 
@@ -1825,4 +1911,8 @@ All pull requests MUST be reviewed against these constitutional requirements, or
 
 This constitution is version-controlled alongside code and follows the same review process as code changes.
 
-**Version**: 1.0.0 | **Ratified**: 2025-11-20 | **Last Amended**: 2025-11-20
+**Version**: 1.1.0 | **Ratified**: 2025-11-20 | **Last Amended**: 2025-11-20
+
+**Version History**:
+- **1.1.0** (2025-11-20): Added Principle XI (Continuous Test Verification) - requires running tests after all code changes
+- **1.0.0** (2025-11-20): Initial release with 10 core principles for Go API development

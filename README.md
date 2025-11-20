@@ -62,7 +62,7 @@ Customize the constitution and templates for your project's specific needs.
 
 ## What You Get
 
-### Constitution (Version 1.0.0)
+### Constitution (Version 1.1.0)
 
 A comprehensive set of principles for backend API development covering:
 
@@ -76,6 +76,7 @@ A comprehensive set of principles for backend API development covering:
 8. **Service Layer Architecture** - Reusable services with dependency injection
 9. **Comprehensive Error Handling** - Sentinel errors + HTTP error codes
 10. **Context-Aware Operations** - Proper timeout and cancellation
+11. **Continuous Test Verification** - Run tests after every code change (NEW in v1.1.0)
 
 ### Templates
 
@@ -349,5 +350,9 @@ For issues or questions:
 
 ---
 
-**Version**: 1.0.0 | **Last Updated**: 2025-11-20
+**Version**: 1.1.0 | **Last Updated**: 2025-11-20
+
+**Version History**:
+- **1.1.0** (2025-11-20): Added Principle XI (Continuous Test Verification)
+- **1.0.0** (2025-11-20): Initial release
 

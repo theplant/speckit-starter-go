@@ -237,12 +237,16 @@ description: "Task list template for feature implementation"
 
 **Purpose**: Improvements that affect multiple user stories
 
+**Note**: AI agents MUST run full test suite after ALL code changes per Principle XI (Continuous Test Verification)
+
 - [ ] TXXX [P] Documentation updates in docs/
-- [ ] TXXX Code cleanup and refactoring
-- [ ] TXXX Performance optimization across all stories
+- [ ] TXXX Code cleanup and refactoring (run tests after each change)
+- [ ] TXXX Performance optimization across all stories (run tests after each change)
 - [ ] TXXX Verify all integration tests pass with real database
-- [ ] TXXX Verify all error tests pass: `go test -v -run "TestAll.*Errors"`
-- [ ] TXXX Security hardening
+- [ ] TXXX Verify all error tests pass
+- [ ] TXXX Run tests with race detector to catch concurrency issues
+- [ ] TXXX Verify test coverage is adequate
+- [ ] TXXX Security hardening (run tests after security changes)
 - [ ] TXXX Run quickstart.md validation
 
 ---
