@@ -32,6 +32,17 @@
 - [ ] CHK005 Item with specific criteria
 - [ ] CHK006 Final item in this category
 
+## Error Testing *(MANDATORY per Constitution Principle IX)*
+
+- [ ] CHK-ERR-001 Verify ALL sentinel errors in `services/errors.go` have test cases
+- [ ] CHK-ERR-002 Verify ALL HTTP error codes in `handlers/error_codes.go` have test cases
+- [ ] CHK-ERR-003 Verify error wrapping uses `fmt.Errorf("%w", err)` (NOT `%v`)
+- [ ] CHK-ERR-004 Verify error checking uses `errors.Is()` (NOT string comparison)
+- [ ] CHK-ERR-005 Verify complete error flow tested: Service → Handler → Client
+- [ ] CHK-ERR-006 Verify context errors tested (cancellation, timeout)
+- [ ] CHK-ERR-007 Run error test suite: `go test -v -run "TestAll.*Errors"`
+- [ ] CHK-ERR-008 Confirm 100% error test coverage (no untested errors)
+
 ## Notes
 
 - Check items off as completed: `[x]`

@@ -8,7 +8,7 @@ description: "Task list template for feature implementation"
 **Input**: Design documents from `/specs/[###-feature-name]/`
 **Prerequisites**: plan.md (required), spec.md (required for user stories), research.md, data-model.md, contracts/
 
-**Tests**: The examples below include test tasks. Tests are OPTIONAL - only include them if explicitly requested in the feature specification.
+**Tests**: Integration tests are MANDATORY per constitution. All tests use real PostgreSQL database via testcontainers-go (no mocking), follow table-driven patterns, use GORM for fixtures, use protobuf structs (NOT maps), verify OpenTracing instrumentation, and cover comprehensive edge cases. Tests are conducted at HTTP layer only (httptest), which exercises the full stack: HTTP → Service → Repository → Database.
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
 
@@ -20,10 +20,15 @@ description: "Task list template for feature implementation"
 
 ## Path Conventions
 
-- **Single project**: `src/`, `tests/` at repository root
-- **Web app**: `backend/src/`, `frontend/src/`
-- **Mobile**: `api/src/`, `ios/src/` or `android/src/`
-- Paths shown below assume single project - adjust based on plan.md structure
+- **Go project**: Root level for `main.go`, packages in subdirectories, `*_test.go` files alongside source
+- **Test organization**: Integration tests in `*_test.go` files (no separate `tests/` directory per Go convention)
+- **Test database**: Use testcontainers-go for automatic PostgreSQL container management
+- **Architecture**: Three-layer architecture (HTTP → Service → Repository)
+- **Service layer**: Business logic in Go interfaces with dependency injection
+- **Database access**: Use GORM for all database operations (models, queries, migrations)
+- **HTTP framework**: Use standard net/http with http.ServeMux (NO external routers, thin wrappers only)
+- **Tracing**: Use OpenTracing for all endpoint instrumentation
+- Paths shown below assume Go project structure - adjust based on plan.md
 
 <!-- 
   ============================================================================
@@ -48,9 +53,17 @@ description: "Task list template for feature implementation"
 
 **Purpose**: Project initialization and basic structure
 
-- [ ] T001 Create project structure per implementation plan
-- [ ] T002 Initialize [language] project with [framework] dependencies
-- [ ] T003 [P] Configure linting and formatting tools
+- [ ] T001 Initialize Go module with `go mod init`
+- [ ] T002 [P] Install GORM dependencies: `go get -u gorm.io/gorm gorm.io/driver/postgres`
+- [ ] T003 [P] Install OpenTracing dependency: `go get -u github.com/opentracing/opentracing-go`
+- [ ] T004 [P] Install Protocol Buffers dependencies: `go get -u google.golang.org/protobuf/testing/protocmp`
+- [ ] T005 [P] Install testcontainers-go: `go get -u github.com/testcontainers/testcontainers-go github.com/testcontainers/testcontainers-go/modules/postgres`
+- [ ] T006 [P] Setup GORM connection and database configuration
+- [ ] T007 [P] Configure environment variables for database URLs
+- [ ] T008 [P] Setup GORM AutoMigrate for database migrations
+- [ ] T009 [P] Configure OpenTracing global tracer (NoopTracer for tests, Jaeger/Zipkin for production)
+- [ ] T010 [P] Create type-safe error definitions singleton struct (error codes, messages, HTTP status)
+- [ ] T011 [P] Configure linting (golangci-lint) and formatting (gofmt, goimports)
 
 ---
 
@@ -60,14 +73,17 @@ description: "Task list template for feature implementation"
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-Examples of foundational tasks (adjust based on your project):
-
-- [ ] T004 Setup database schema and migrations framework
-- [ ] T005 [P] Implement authentication/authorization framework
-- [ ] T006 [P] Setup API routing and middleware structure
-- [ ] T007 Create base models/entities that all stories depend on
-- [ ] T008 Configure error handling and logging infrastructure
-- [ ] T009 Setup environment configuration management
+- [ ] T012 Create initial GORM models for core tables
+- [ ] T013 Create initial database migrations using GORM AutoMigrate
+- [ ] T014 [P] Setup HTTP router using standard net/http with http.ServeMux
+- [ ] T015 [P] Implement OpenTracing middleware to instrument all HTTP endpoints
+- [ ] T016 [P] Implement middleware: logging, recovery, CORS
+- [ ] T017 [P] Create GORM database connection pool and health check
+- [ ] T018 [P] Setup testcontainers test database helper (automatic container lifecycle, database truncation for test isolation)
+- [ ] T019 Implement base error response types and JSON marshaling (use singleton error struct)
+- [ ] T020 [P] Create fixture helper utilities for test database population using GORM
+- [ ] T021 [P] Create table truncation helper function (truncate tables in reverse dependency order with CASCADE)
+- [ ] T022 [P] Verify OpenTracing spans are created for test requests
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
@@ -79,21 +95,42 @@ Examples of foundational tasks (adjust based on your project):
 
 **Independent Test**: [How to verify this story works on its own]
 
-### Tests for User Story 1 (OPTIONAL - only if tests requested) ⚠️
+### Integration Tests for User Story 1 (MANDATORY) ⚠️
 
-> **NOTE: Write these tests FIRST, ensure they FAIL before implementation**
+> **CRITICAL: Write these tests FIRST, ensure they FAIL before implementation**
+> **All tests MUST use real PostgreSQL (Docker), table-driven pattern, and cover edge cases**
 
-- [ ] T010 [P] [US1] Contract test for [endpoint] in tests/contract/test_[name].py
-- [ ] T011 [P] [US1] Integration test for [user journey] in tests/integration/test_[name].py
+- [ ] T022 [US1] HTTP integration test for [endpoint] in [package]/[handler]_test.go
+  - Happy path test cases
+  - Edge cases: input validation, boundary conditions, auth errors
+  - Edge cases: data state (404, conflicts), database errors, HTTP specifics
+  - Use httptest.ResponseRecorder and real testcontainers PostgreSQL database fixtures
+  - Tests exercise full stack: HTTP → Service → Repository → Database
+  - Use GORM for fixture data setup
+  - Use database truncation for cleanup (defer truncateTables pattern)
+  - Use protobuf structs (NOT maps) for request/response
+  - Use `cmp.Diff()` with `protocmp.Transform()` for ALL protobuf message assertions (MANDATORY)
+  - Do NOT use individual field comparisons for protobuf messages
+  - Verify OpenTracing spans are created (NoopTracer default, mock tracer for span verification tests)
+  - Verify context.Context is passed through all layers (HTTP → Service → Repository)
+  - Verify errors are wrapped with contextual information using `fmt.Errorf("%w", err)`
+  - Verify error checking uses `errors.Is()` and `errors.As()` (NOT string comparison)
+  - Table-driven test structure with test case structs
 
 ### Implementation for User Story 1
 
-- [ ] T012 [P] [US1] Create [Entity1] model in src/models/[entity1].py
-- [ ] T013 [P] [US1] Create [Entity2] model in src/models/[entity2].py
-- [ ] T014 [US1] Implement [Service] in src/services/[service].py (depends on T012, T013)
-- [ ] T015 [US1] Implement [endpoint/feature] in src/[location]/[file].py
-- [ ] T016 [US1] Add validation and error handling
-- [ ] T017 [US1] Add logging for user story 1 operations
+- [ ] T023 [P] [US1] Create [Entity1] GORM model in [package]/[entity1].go
+- [ ] T024 [P] [US1] Create [Entity2] GORM model in [package]/[entity2].go
+- [ ] T025 [US1] Implement GORM database repository in [package]/[repository].go (depends on T023, T024)
+- [ ] T026 [P] [US1] Define service interface in [package]/service.go with business logic methods (all methods MUST accept context.Context as first parameter)
+- [ ] T027 [US1] Implement service with dependency injection (db, logger, cache) in [package]/service_impl.go
+- [ ] T028 [US1] Implement business logic in service methods (validation, transactions, error wrapping with fmt.Errorf %w verb)
+- [ ] T029 [US1] Implement ServeHTTP handler as thin wrapper in [package]/handler.go (delegates to service)
+- [ ] T030 [US1] Add OpenTracing span creation in handler (extract/start span, set tags)
+- [ ] T031 [US1] Add child spans for service calls (instrument business logic)
+- [ ] T032 [US1] Add HTTP request parsing and response formatting in handler
+- [ ] T033 [US1] Create fixture helpers using GORM in [package]/fixtures_test.go
+- [ ] T034 [US1] Create service constructor with dependency injection
 
 **Checkpoint**: At this point, User Story 1 should be fully functional and testable independently
 
@@ -105,17 +142,18 @@ Examples of foundational tasks (adjust based on your project):
 
 **Independent Test**: [How to verify this story works on its own]
 
-### Tests for User Story 2 (OPTIONAL - only if tests requested) ⚠️
+### Integration Tests for User Story 2 (MANDATORY) ⚠️
 
-- [ ] T018 [P] [US2] Contract test for [endpoint] in tests/contract/test_[name].py
-- [ ] T019 [P] [US2] Integration test for [user journey] in tests/integration/test_[name].py
+- [ ] T018 [US2] Integration test for [endpoint] in [package]/[handler]_test.go
+  - Table-driven tests with comprehensive edge cases per constitution
 
 ### Implementation for User Story 2
 
-- [ ] T020 [P] [US2] Create [Entity] model in src/models/[entity].py
-- [ ] T021 [US2] Implement [Service] in src/services/[service].py
-- [ ] T022 [US2] Implement [endpoint/feature] in src/[location]/[file].py
-- [ ] T023 [US2] Integrate with User Story 1 components (if needed)
+- [ ] T019 [P] [US2] Create [Entity] model/struct in [package]/[entity].go
+- [ ] T020 [US2] Implement database operations in [package]/[repository].go
+- [ ] T021 [US2] Implement ServeHTTP handler in [package]/[handler].go
+- [ ] T022 [US2] Integrate with User Story 1 components (if needed)
+- [ ] T023 [US2] Create fixture helpers for test data
 
 **Checkpoint**: At this point, User Stories 1 AND 2 should both work independently
 
@@ -127,22 +165,71 @@ Examples of foundational tasks (adjust based on your project):
 
 **Independent Test**: [How to verify this story works on its own]
 
-### Tests for User Story 3 (OPTIONAL - only if tests requested) ⚠️
+### Integration Tests for User Story 3 (MANDATORY) ⚠️
 
-- [ ] T024 [P] [US3] Contract test for [endpoint] in tests/contract/test_[name].py
-- [ ] T025 [P] [US3] Integration test for [user journey] in tests/integration/test_[name].py
+- [ ] T024 [US3] Integration test for [endpoint] in [package]/[handler]_test.go
+  - Table-driven tests with comprehensive edge cases per constitution
 
 ### Implementation for User Story 3
 
-- [ ] T026 [P] [US3] Create [Entity] model in src/models/[entity].py
-- [ ] T027 [US3] Implement [Service] in src/services/[service].py
-- [ ] T028 [US3] Implement [endpoint/feature] in src/[location]/[file].py
+- [ ] T025 [P] [US3] Create [Entity] model/struct in [package]/[entity].go
+- [ ] T026 [US3] Implement database operations in [package]/[repository].go
+- [ ] T027 [US3] Implement ServeHTTP handler in [package]/[handler].go
+- [ ] T028 [US3] Create fixture helpers for test data
 
 **Checkpoint**: All user stories should now be independently functional
 
 ---
 
 [Add more user story phases as needed, following the same pattern]
+
+---
+
+## Phase N-1: Comprehensive Error Testing (MANDATORY - Before Feature Complete)
+
+**Purpose**: Test ALL defined errors per Constitution Principle IX
+
+**⚠️ CRITICAL**: Feature is NOT complete until all errors are tested. Untested error paths are production bugs.
+
+### Error Testing Tasks (MANDATORY)
+
+- [ ] TXXX Create comprehensive error testing file: `tests/integration/error_handling_test.go`
+
+- [ ] TXXX Implement `TestAllSentinelErrors` function
+  - Test EVERY error defined in `services/errors.go`
+  - Verify error wrapping with `fmt.Errorf("%w", err)`
+  - Verify error checking with `errors.Is()`
+  - Use table-driven test structure
+  - Each error must have at least one test case
+  - Use real database fixtures to trigger errors
+  - Example: ErrProductNotFound, ErrDuplicateSKU, ErrMissingRequired, etc.
+
+- [ ] TXXX Implement `TestAllHTTPErrorCodes` function
+  - Test EVERY error code defined in `handlers/error_codes.go`
+  - Verify HTTP status codes (400, 404, 409, 500, etc.)
+  - Verify error response JSON structure
+  - Verify ErrorCode.ServiceErr mapping
+  - Use httptest.ResponseRecorder for HTTP testing
+  - Example: PRODUCT_NOT_FOUND, DUPLICATE_SKU, MISSING_REQUIRED, etc.
+
+- [ ] TXXX Implement `TestErrorFlowEndToEnd` function
+  - Verify complete error flow: Service → Handler → Client
+  - Test context errors (cancellation → 499, timeout → 504)
+  - Validate error message propagation
+  - Verify automatic error mapping via HandleServiceError()
+
+- [ ] TXXX Run comprehensive error test suite
+  - Execute: `go test -v -run "TestAll.*Errors|TestErrorFlow" ./tests/integration/`
+  - Verify every sentinel error has a passing test
+  - Verify every HTTP error code has a passing test
+  - Confirm zero untested error paths remain
+
+- [ ] TXXX Document error testing approach
+  - Create ERROR_TESTING_REPORT.md with coverage matrix
+  - List all tested errors with test case names
+  - Document any intentionally untested errors (with justification)
+
+**Checkpoint**: All errors tested - ready for code review
 
 ---
 
@@ -153,7 +240,8 @@ Examples of foundational tasks (adjust based on your project):
 - [ ] TXXX [P] Documentation updates in docs/
 - [ ] TXXX Code cleanup and refactoring
 - [ ] TXXX Performance optimization across all stories
-- [ ] TXXX [P] Additional unit tests (if requested) in tests/unit/
+- [ ] TXXX Verify all integration tests pass with real database
+- [ ] TXXX Verify all error tests pass: `go test -v -run "TestAll.*Errors"`
 - [ ] TXXX Security hardening
 - [ ] TXXX Run quickstart.md validation
 
