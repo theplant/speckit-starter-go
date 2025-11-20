@@ -58,6 +58,39 @@
 - [ ] CHK-TEST-009 Verify test failures were reported and fixed
 - [ ] CHK-TEST-010 Verify task only marked complete after all tests passed
 
+## Root Cause Tracing *(MANDATORY per Constitution Principle XII)*
+
+**Note**: AI agents MUST trace problems to source and fix there, NOT work around symptoms
+
+- [ ] CHK-DEBUG-001 Verify bugs have documented root cause analysis
+- [ ] CHK-DEBUG-002 Verify fixes address root causes, not symptoms
+- [ ] CHK-DEBUG-003 Verify NO test cases were removed to make tests pass
+- [ ] CHK-DEBUG-004 Verify NO test expectations were weakened to accommodate bugs
+- [ ] CHK-DEBUG-005 Verify NO workarounds added instead of proper fixes
+- [ ] CHK-DEBUG-006 Verify problem traced backward through call chain to original trigger
+- [ ] CHK-DEBUG-007 Verify fix implemented at source location (not symptom location)
+- [ ] CHK-DEBUG-008 Verify tests validate correct behavior (not broken behavior)
+- [ ] CHK-DEBUG-009 Verify flaky tests are fixed at root cause (not skipped)
+- [ ] CHK-DEBUG-010 Verify commit message documents root cause trace for bug fixes
+- [ ] CHK-DEBUG-011 Verify no "quick fixes" that lack understanding
+- [ ] CHK-DEBUG-012 Verify AI agent resisted temptation to "just make it work"
+
+**Root Cause Tracing Process**:
+1. Document symptom clearly
+2. Trace backward through call chain
+3. Identify original trigger (root cause)
+4. Fix at source
+5. Verify fix with tests
+6. Document tracing process
+
+**Anti-Patterns to Reject**:
+- ❌ Removing failing test cases
+- ❌ Changing test expectations to match broken behavior
+- ❌ Adding `t.Skip()` to flaky tests
+- ❌ Relaxing assertions ("at least" instead of "exactly")
+- ❌ Adding conditional workarounds
+- ❌ Catching and ignoring errors without understanding
+
 ## Notes
 
 - Check items off as completed: `[x]`

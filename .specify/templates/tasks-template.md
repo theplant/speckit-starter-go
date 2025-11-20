@@ -239,6 +239,8 @@ description: "Task list template for feature implementation"
 
 **Note**: AI agents MUST run full test suite after ALL code changes per Principle XI (Continuous Test Verification)
 
+**Root Cause Tracing** (Principle XII): When encountering failures, trace backward to find original trigger and fix at source
+
 - [ ] TXXX [P] Documentation updates in docs/
 - [ ] TXXX Code cleanup and refactoring (run tests after each change)
 - [ ] TXXX Performance optimization across all stories (run tests after each change)
@@ -248,6 +250,13 @@ description: "Task list template for feature implementation"
 - [ ] TXXX Verify test coverage is adequate
 - [ ] TXXX Security hardening (run tests after security changes)
 - [ ] TXXX Run quickstart.md validation
+
+**Debugging Discipline** (if issues encountered during any phase):
+- [ ] TXXX Document root cause analysis for any bugs fixed
+- [ ] TXXX Verify fixes address root causes, not symptoms
+- [ ] TXXX Ensure no test cases removed or weakened to make tests pass
+- [ ] TXXX Verify test expectations reflect correct behavior
+- [ ] TXXX Document tracing process (symptom → source → fix)
 
 ---
 
@@ -341,3 +350,121 @@ With multiple developers:
 - Commit after each task or logical group
 - Stop at any checkpoint to validate story independently
 - Avoid: vague tasks, same file conflicts, cross-story dependencies that break independence
+
+---
+
+## Troubleshooting & Debugging (Principle XII: Root Cause Tracing)
+
+When encountering problems during implementation, follow this methodology:
+
+### Root Cause Tracing Process
+
+**Step 1: Document the Symptom**
+- What is the observable problem?
+- What behavior was expected vs. actual?
+- Where does the problem manifest (test failure, runtime error, etc.)?
+
+**Step 2: Trace Backward Through Call Chain**
+```
+[SYMPTOM] Observable problem
+    ↑
+[Layer N] Where problem appears
+    ↑
+[Layer N-1] Previous call
+    ↑
+[Layer N-2] Earlier call
+    ↑
+[ROOT CAUSE] Where problem originates
+```
+
+**Step 3: Verify Root Cause**
+- Does fixing this source eliminate the symptom?
+- Is this the original trigger, not just another symptom?
+- Can you explain the mechanism causing the problem?
+
+**Step 4: Fix at Source**
+- Implement fix at root cause location
+- Do NOT add workarounds in symptom location
+- Do NOT weaken tests to accommodate bugs
+- Do NOT remove failing test cases
+
+**Step 5: Verify Fix**
+- Run tests to confirm problem resolved
+- Verify no new problems introduced
+- Confirm all tests pass without workarounds
+
+**Step 6: Document**
+- Record root cause in commit message
+- Add comments explaining the fix if non-obvious
+- Update documentation if revealing systemic issue
+
+### Anti-Patterns to Avoid
+
+**❌ NEVER Do These**:
+1. Remove failing test cases
+2. Change test expectations to match broken behavior
+3. Add `t.Skip()` to flaky tests
+4. Relax assertions ("at least" instead of "exactly")
+5. Add conditional workarounds
+6. Catch and ignore errors
+7. "Make it work" without understanding why
+
+**✅ ALWAYS Do These**:
+1. Trace problem to its source
+2. Fix where it originates
+3. Maintain test integrity
+4. Document root cause
+5. Verify proper fix with tests
+
+### Example: Database Default Override
+
+**Symptom**: Struct field `IsActive: false` becomes `true` in database
+
+**Wrong Approach** ❌:
+```go
+// Remove test case for inactive items
+// OR change test: "if len(items) < 2" instead of "== 2"
+```
+
+**Root Cause Trace** ✅:
+```
+Test creates: IsActive: false
+    ↑
+GORM executes: db.Create(&item)
+    ↑
+PostgreSQL has: is_active BOOL DEFAULT true
+    ↑
+ROOT CAUSE: Model tag has `default:true`
+```
+
+**Proper Fix** ✅:
+```go
+// internal/models/item.go
+IsActive bool `gorm:"not null;index"` // Removed default:true
+```
+
+### When to Apply Root Cause Tracing
+
+Apply this discipline when:
+- ✅ Tests fail unexpectedly
+- ✅ Behavior doesn't match expectations
+- ✅ Errors occur without clear cause
+- ✅ Workarounds seem necessary
+- ✅ "It should work" but doesn't
+- ✅ Flaky tests appear
+- ✅ Data doesn't persist as expected
+
+### Documentation Requirements
+
+When fixing bugs, document in commit:
+```
+Fix: [Brief description]
+
+Root Cause:
+- Symptom: [What was observed]
+- Traced: [Call chain]
+- Source: [Where it originated]
+- Fix: [What was changed at source]
+
+Verified: [How fix was confirmed]
+```
