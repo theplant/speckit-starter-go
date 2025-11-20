@@ -29,8 +29,8 @@
 **Error Testing**: ALL sentinel errors and HTTP error codes MUST be tested (MANDATORY per constitution Principle IX)  
 **Context Propagation**: All service methods MUST accept context.Context as first parameter (MANDATORY per constitution)  
 **Service Architecture**: Services in public `services/` package (NOT internal/) for external reusability (MANDATORY per constitution Principle VIII)  
-**Target Platform**: [e.g., Linux server, containerized deployment or NEEDS CLARIFICATION]  
-**Project Type**: [single/web/mobile - determines source structure]  
+**Target Platform**: [e.g., Linux server, containerized deployment, Kubernetes or NEEDS CLARIFICATION]  
+**Project Type**: Backend API service (Go)  
 **Performance Goals**: [domain-specific, e.g., 1000 req/s, p99 < 200ms or NEEDS CLARIFICATION]  
 **Constraints**: [domain-specific, e.g., <200ms p95, <100MB memory or NEEDS CLARIFICATION]  
 **Scale/Scope**: [domain-specific, e.g., 10k users, 100k requests/day or NEEDS CLARIFICATION]
@@ -58,49 +58,41 @@ specs/[###-feature]/
 ### Source Code (repository root)
 <!--
   ACTION REQUIRED: Replace the placeholder tree below with the concrete layout
-  for this feature. Delete unused options and expand the chosen structure with
-  real paths (e.g., apps/admin, packages/something). The delivered plan must
-  not include Option labels.
+  for this feature. Expand the structure with real paths for your API project.
 -->
 
 ```text
-# [REMOVE IF UNUSED] Option 1: Single project (DEFAULT)
-src/
-├── models/
-├── services/
-├── cli/
-└── lib/
-
-tests/
-├── contract/
-├── integration/
-└── unit/
-
-# [REMOVE IF UNUSED] Option 2: Web application (when "frontend" + "backend" detected)
-backend/
-├── src/
-│   ├── models/
-│   ├── services/
+# Go Backend API Project Structure
+├── .specify/              # Spec-kit configuration
+│   ├── memory/
+│   │   └── constitution.md
+│   ├── scripts/
+│   └── templates/
+├── services/              # PUBLIC - reusable business logic
+│   ├── product_service.go
+│   ├── errors.go          # Sentinel errors
+│   └── migrations.go      # AutoMigrate for external apps
+├── handlers/              # PUBLIC - HTTP handlers
+│   ├── product_handler.go
+│   └── error_codes.go
+├── api/                   # PUBLIC - protobuf definitions and generated code
+│   ├── v1/
+│   │   └── product.proto
+│   └── gen/v1/
+│       └── product.pb.go
+├── internal/              # INTERNAL - implementation details
+│   ├── models/            # GORM models (not exposed)
+│   ├── middleware/        # HTTP middleware
+│   └── config/            # Configuration
+├── cmd/                   # Application entry points
 │   └── api/
+│       └── main.go
 └── tests/
-
-frontend/
-├── src/
-│   ├── components/
-│   ├── pages/
-│   └── services/
-└── tests/
-
-# [REMOVE IF UNUSED] Option 3: Mobile + API (when "iOS/Android" detected)
-api/
-└── [same as backend above]
-
-ios/ or android/
-└── [platform-specific structure: feature modules, UI flows, platform tests]
+    └── integration/
+        └── product_test.go
 ```
 
-**Structure Decision**: [Document the selected structure and reference the real
-directories captured above]
+**Structure Decision**: [Document any customizations to the structure above for your specific API needs]
 
 ## Complexity Tracking
 

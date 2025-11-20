@@ -1,10 +1,10 @@
-# Speckit Starter for Go Projects
+# Speckit Starter for Go Backend APIs
 
-A comprehensive template for Go API projects with integration testing, protobuf data structures, distributed tracing, and service architecture patterns.
+A comprehensive template for Go backend API projects with integration testing, protobuf data structures, distributed tracing, and service architecture patterns.
 
 ## Overview
 
-This repository provides a battle-tested constitution and templates for building production-ready Go APIs with:
+This repository provides a battle-tested constitution and templates for building production-ready Go backend APIs with:
 
 - ✅ **Integration Testing First** - Real database testing, no mocking
 - ✅ **Protobuf Data Structures** - Type-safe API contracts
@@ -64,7 +64,7 @@ Customize the constitution and templates for your project's specific needs.
 
 ### Constitution (Version 1.0.0)
 
-A comprehensive set of principles covering:
+A comprehensive set of principles for backend API development covering:
 
 1. **Integration Testing First** - No mocking database or HTTP layers
 2. **Table-Driven Test Design** - Consistent test structure
@@ -267,7 +267,7 @@ var Errors = struct {
 
 ## Project Structure
 
-Recommended structure for maximum reusability:
+Recommended structure for Go backend API projects (maximum reusability):
 
 ```
 my-awesome-api/
@@ -327,12 +327,14 @@ func TestProduct(t *testing.T) {
 
 ## Contributing
 
-This template is designed to be forked and customized for your organization's needs. Feel free to:
+This template is designed to be forked and customized for your organization's backend API needs. Feel free to:
 
-- Modify the constitution for your tech stack
-- Add organization-specific principles
+- Modify the constitution for your specific backend stack
+- Add organization-specific API principles
 - Customize templates and scripts
 - Share improvements back to the community
+
+**Note**: This template is specifically for Go backend APIs. If you need frontend or mobile app templates, consider creating separate specialized templates.
 
 ## License
 
