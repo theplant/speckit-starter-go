@@ -99,9 +99,18 @@ description: "Task list template for feature implementation"
 
 > **CRITICAL: Write these tests FIRST, ensure they FAIL before implementation**
 > **All tests MUST use real PostgreSQL (Docker), table-driven pattern, and cover edge cases**
+> **ACCEPTANCE SCENARIO COVERAGE (Principle XIII): Each acceptance scenario from spec.md MUST have a corresponding test**
 
 - [ ] T022 [US1] HTTP integration test for [endpoint] in [package]/[handler]_test.go
-  - Happy path test cases
+  - **Acceptance Scenario Tests (MANDATORY - table-driven design per Principle XIII)**:
+    - Test function: `TestFeature[UserStory]AcceptanceScenarios` (e.g., `TestEnrollmentAcceptanceScenarios`)
+    - Use table-driven test with test case struct (Principle II - MANDATORY)
+    - Test case `name` field: "US1-AS1: [Description]", "US1-AS2: [Description]", etc.
+    - Test case `scenario` field (optional): "Given..., When..., Then..." for documentation
+    - Each test case represents one acceptance scenario from spec.md
+    - Each test case MUST validate complete "Given/When/Then" clause from spec
+    - Use `cmp.Diff()` with `protocmp.Transform()` for ALL protobuf assertions (Principle VI - MANDATORY)
+  - Happy path test cases (from acceptance scenarios)
   - Edge cases: input validation, boundary conditions, auth errors
   - Edge cases: data state (404, conflicts), database errors, HTTP specifics
   - Use httptest.ResponseRecorder and real testcontainers PostgreSQL database fixtures
@@ -116,6 +125,12 @@ description: "Task list template for feature implementation"
   - Verify errors are wrapped with contextual information using `fmt.Errorf("%w", err)`
   - Verify error checking uses `errors.Is()` and `errors.As()` (NOT string comparison)
   - Table-driven test structure with test case structs
+  
+- [ ] T023 [US1] Create acceptance scenario traceability matrix (optional but recommended)
+  - Document mapping: US1-AS1 → test case "US1-AS1: [Description]" in TestFeature[UserStory]AcceptanceScenarios
+  - Verify all scenarios from spec.md are covered
+  - Flag any deferred scenarios with justification
+  - Note: Traceability can also be verified by reviewing test case `name` fields in table-driven test
 
 ### Implementation for User Story 1
 
@@ -144,8 +159,18 @@ description: "Task list template for feature implementation"
 
 ### Integration Tests for User Story 2 (MANDATORY) ⚠️
 
+> **ACCEPTANCE SCENARIO COVERAGE (Principle XIII): Each acceptance scenario from spec.md MUST have a corresponding test**
+
 - [ ] T018 [US2] Integration test for [endpoint] in [package]/[handler]_test.go
+  - **Acceptance Scenario Tests (MANDATORY - table-driven design per Principle XIII)**:
+    - Test function: `TestFeature[UserStory]AcceptanceScenarios` (table-driven)
+    - Test case `name` field: "US2-AS1: [Description]", "US2-AS2: [Description]"
+    - Use `cmp.Diff()` with `protocmp.Transform()` for protobuf assertions (MANDATORY)
   - Table-driven tests with comprehensive edge cases per constitution
+  
+- [ ] T019 [US2] Create acceptance scenario traceability matrix (optional but recommended)
+  - Document mapping: US2-AS# → test case name in TestFeature[UserStory]AcceptanceScenarios
+  - Verify all scenarios from spec.md are covered
 
 ### Implementation for User Story 2
 
@@ -167,8 +192,18 @@ description: "Task list template for feature implementation"
 
 ### Integration Tests for User Story 3 (MANDATORY) ⚠️
 
+> **ACCEPTANCE SCENARIO COVERAGE (Principle XIII): Each acceptance scenario from spec.md MUST have a corresponding test**
+
 - [ ] T024 [US3] Integration test for [endpoint] in [package]/[handler]_test.go
+  - **Acceptance Scenario Tests (MANDATORY - table-driven design per Principle XIII)**:
+    - Test function: `TestFeature[UserStory]AcceptanceScenarios` (table-driven)
+    - Test case `name` field: "US3-AS1: [Description]", "US3-AS2: [Description]"
+    - Use `cmp.Diff()` with `protocmp.Transform()` for protobuf assertions (MANDATORY)
   - Table-driven tests with comprehensive edge cases per constitution
+  
+- [ ] T025 [US3] Create acceptance scenario traceability matrix (optional but recommended)
+  - Document mapping: US3-AS# → test case name in TestFeature[UserStory]AcceptanceScenarios
+  - Verify all scenarios from spec.md are covered
 
 ### Implementation for User Story 3
 
@@ -182,6 +217,42 @@ description: "Task list template for feature implementation"
 ---
 
 [Add more user story phases as needed, following the same pattern]
+
+---
+
+## Phase N-2: Acceptance Scenario Validation (MANDATORY - Before Feature Complete)
+
+**Purpose**: Verify ALL acceptance scenarios from spec.md have corresponding tests per Constitution Principle XIII
+
+**⚠️ CRITICAL**: Feature is NOT complete until all acceptance scenarios are tested. Untested scenarios = untested requirements.
+
+### Acceptance Scenario Validation Tasks (MANDATORY)
+
+- [ ] TXXX Generate acceptance scenario traceability matrix (optional but recommended)
+  - List all acceptance scenarios from spec.md (US#-AS# format)
+  - Map each scenario to test case name in table-driven tests
+  - Example format:
+    ```
+    | Scenario | Description | Test Function & Case Name | Status |
+    |----------|-------------|---------------------------|--------|
+    | US1-AS1  | New customer enrolls | TestEnrollmentAcceptanceScenarios → "US1-AS1: New customer enrolls" | ✅ Tested |
+    | US1-AS2  | First purchase enrollment | TestEnrollmentAcceptanceScenarios → "US1-AS2: First purchase enrollment" | ❌ NOT TESTED |
+    ```
+
+- [ ] TXXX Validate acceptance scenario coverage
+  - Verify every scenario in spec.md has a test case in table-driven tests
+  - Run tests: `go test -v -run "Test.*AcceptanceScenarios" ./...`
+  - Review test output to see test case names (should show "US#-AS#: ..." format)
+  - Confirm all tests pass
+  - Document any deferred scenarios with justification
+
+- [ ] TXXX Review test structure and assertions
+  - Verify table-driven test design used (Principle II - MANDATORY)
+  - Verify test case `name` field includes scenario ID: "US#-AS#: [Description]"
+  - Verify `cmp.Diff()` with `protocmp.Transform()` used for protobuf assertions (Principle VI - MANDATORY)
+  - Verify tests validate complete "Given/When/Then" clauses
+
+**Checkpoint**: All acceptance scenarios tested - requirements validated
 
 ---
 

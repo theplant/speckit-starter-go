@@ -18,6 +18,11 @@
   - Tested independently
   - Deployed independently
   - Demonstrated to users independently
+  
+  CRITICAL - ACCEPTANCE SCENARIO COVERAGE (Constitution Principle XIII):
+  Every acceptance scenario (Given/When/Then) MUST have a corresponding integration test.
+  Use naming convention: US#-AS# (e.g., US1-AS1, US1-AS2, US2-AS1)
+  This ensures one-to-one mapping between documented requirements and test validation.
 -->
 
 ### User Story 1 - [Brief Title] (Priority: P1)
@@ -30,8 +35,15 @@
 
 **Acceptance Scenarios**:
 
-1. **Given** [initial state], **When** [action], **Then** [expected outcome]
-2. **Given** [initial state], **When** [action], **Then** [expected outcome]
+1. **[US1-AS1]** **Given** [initial state], **When** [action], **Then** [expected outcome]
+2. **[US1-AS2]** **Given** [initial state], **When** [action], **Then** [expected outcome]
+
+<!--
+  NOTE: Each scenario MUST be labeled with [US#-AS#] for traceability to integration tests.
+  Integration tests MUST use table-driven design (Principle II) with test case names referencing scenarios.
+  Example: TestEnrollmentAcceptanceScenarios with test cases named "US1-AS1: New customer enrolls"
+  Tests MUST use protocmp.Transform() for protobuf assertions (Principle VI).
+-->
 
 ---
 
@@ -45,7 +57,8 @@
 
 **Acceptance Scenarios**:
 
-1. **Given** [initial state], **When** [action], **Then** [expected outcome]
+1. **[US2-AS1]** **Given** [initial state], **When** [action], **Then** [expected outcome]
+2. **[US2-AS2]** **Given** [initial state], **When** [action], **Then** [expected outcome]
 
 ---
 
@@ -59,7 +72,8 @@
 
 **Acceptance Scenarios**:
 
-1. **Given** [initial state], **When** [action], **Then** [expected outcome]
+1. **[US3-AS1]** **Given** [initial state], **When** [action], **Then** [expected outcome]
+2. **[US3-AS2]** **Given** [initial state], **When** [action], **Then** [expected outcome]
 
 ---
 
