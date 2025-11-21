@@ -237,6 +237,136 @@ expected.Id = response.Id
 expected.CreatedAt = response.CreatedAt
 ```
 
+#### What Qualifies as "Truly Random/Generated"
+
+ONLY four field types may copy response values in test assertions:
+
+1. **Database UUIDs**: `gen_random_uuid()` generated fields (`id`, `customer_id`)
+2. **System timestamps**: Operation execution time (`created_at`, `updated_at`, `enrolled_at`)
+3. **Crypto-random values**: `crypto/rand` generated tokens (`membership_number`, `referral_code`)
+4. **Unpredictable calculations**: Checksums, hashes with random inputs
+
+**Everything else MUST use fixture values**, including:
+- Database/fixture defaults
+- Enum values and constants
+- Configuration values
+- Request payload data
+- Empty/null/zero values
+
+#### The Anti-Pattern: Lazy Response Copying
+
+**DON'T do this:**
+
+```go
+expected := &pb.Tier{
+    Name:        "Base",
+    Description: resp.Tier.Description,    // ❌ Copying fixture value - test always passes!
+}
+// Comment: "can't derive" (FALSE - it's in CreateTestTier default)
+```
+
+**Why this breaks testing:**
+- Test passes even if API returns garbage
+- No actual validation happens
+- Defeats the purpose of testing
+
+**DO this instead:**
+
+```go
+// Step 1: Read testutil/fixtures.go to find CreateTestTier() default
+// Step 2: Use that default value
+expected := &pb.Tier{
+    Name:        "Base",
+    Description: "Base tier for testing",  // From fixtures.go:21
+}
+```
+
+#### Code Review Checklist
+
+For each test, reviewers MUST verify:
+
+**✅ Fixture Investigation:**
+- [ ] Read `testutil/fixtures.go` to find defaults
+- [ ] Check request payload for input values
+- [ ] Document fixture sources in comments
+
+**✅ Expected Values:**
+- [ ] UUIDs/timestamps/crypto-rand use response ✓
+- [ ] All other fields use fixture values ✓
+- [ ] No `resp.Field` without justification
+
+**🚩 Red Flags (reject PR):**
+- Comments claiming "can't derive" for non-random fields
+- Multiple fields copying from response
+- Missing fixture source documentation
+- Test written without reading fixture code
+
+#### AI Agent Requirements
+
+Before writing test assertions, AI agents MUST:
+
+1. **Read fixtures first**: `read_file("testutil/fixtures.go")` to find `CreateTestXxx()` defaults
+2. **Document sources**: Add comments showing where each value comes from
+3. **Use fixture values**: Only use `resp.Field` for the 4 random types above
+4. **Never claim "can't derive"** without proof of true randomness
+
+**Prohibited shortcuts:**
+- ❌ Copying response without reading fixtures
+- ❌ Claiming "generated" without evidence
+- ❌ Lazy response copying to make tests pass
+
+#### Example: Correct Fixture Derivation
+
+```go
+// Step 1: Read testutil/fixtures.go CreateTestTier()
+// Found: Description: "Base tier for testing" at line 21
+
+// Step 2: Build expected from fixtures
+expected := &pb.Customer{
+    // Random fields (use response):
+    Id:               resp.Customer.Id,               // Database UUID
+    MembershipNumber: resp.Customer.MembershipNumber, // crypto/rand
+    ReferralCode:     resp.Customer.ReferralCode,     // crypto/rand
+    EnrolledAt:       resp.Customer.EnrolledAt,       // Timestamp
+    CreatedAt:        resp.Customer.CreatedAt,        // Timestamp
+    UpdatedAt:        resp.Customer.UpdatedAt,        // Timestamp
+    
+    // Fixture fields (derive from sources):
+    AccountId:       "user-001",                // From REQUEST
+    CurrentBalance:  0,                         // Known rule
+    Tier: &pb.Tier{
+        Id:          baseTier.ID,               // DATABASE fixture
+        Name:        "Base",                    // fixtures.go:16
+        Level:       0,                         // fixtures.go:17
+        Description: "Base tier for testing",   // fixtures.go:21 ✓
+    },
+}
+```
+
+#### Enforcement: Reject PRs With Violations
+
+**Reviewers MUST reject PRs containing:**
+- Non-random fields using `resp.Field` without justification
+- Comments claiming "can't derive" for fixture/config data
+- Missing fixture source documentation
+- Tests written without reading fixture code
+
+**Response for violations:**
+
+```markdown
+❌ Constitution Principle VI Violation
+
+Field: `Description: resp.Customer.Tier.Description`
+Claim: "can't derive"
+
+Fix required:
+1. Read testutil/fixtures.go CreateTestTier()
+2. Find Description default value
+3. Use that value: `Description: "Base tier for testing", // fixtures.go:21`
+```
+
+**Escalation:** Repeated violations require AI agent process review.
+
 ### VII. Distributed Tracing (OpenTracing)
 
 All API endpoints MUST be instrumented with distributed tracing at appropriate granularity:
@@ -277,7 +407,11 @@ func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
     
     // Parse request
     var req pb.ProductCreateRequest
-    json.NewDecoder(r.Body).Decode(&req)
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        span.SetTag("error", true)
+        http.Error(w, "Invalid request", http.StatusBadRequest)
+        return
+    }
     
     // Service call creates child span (one span for entire operation)
     ctx := opentracing.ContextWithSpan(r.Context(), span)
@@ -291,7 +425,12 @@ func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
     }
     
     span.SetTag("http.status_code", http.StatusCreated)
-    json.NewEncoder(w).Encode(product)
+    w.Header().Set("Content-Type", "application/json")
+    if err := json.NewEncoder(w).Encode(product); err != nil {
+        span.SetTag("error", true)
+        // Log error (response already started, cannot change status)
+        return
+    }
 }
 
 // Service - creates child span for business logic
@@ -438,7 +577,10 @@ import (
 )
 
 svc := services.NewProductService(db)
-product, _ := svc.Create(ctx, &pb.CreateProductRequest{...})
+product, err := svc.Create(ctx, &pb.CreateProductRequest{...})
+if err != nil {
+    log.Fatal(err)
+}
 // product is *pb.Product (public protobuf) - external app can use it! ✅
 // models.Product is never exposed - stays internal ✅
 ```
@@ -490,7 +632,10 @@ func AutoMigrate(db *gorm.DB) error {
 // External app usage:
 import "yourapp/services"
 
-db, _ := gorm.Open(...)
+db, err := gorm.Open(...)
+if err != nil {
+    log.Fatal(err)
+}
 if err := services.AutoMigrate(db); err != nil {  // ✅ Migrates schema
     log.Fatal(err)
 }
@@ -686,7 +831,10 @@ func (s *productService) Create(ctx context.Context, req *pb.ProductCreateReques
 import "yourapp/services"
 
 func main() {
-    db, _ := gorm.Open(...)
+    db, err := gorm.Open(...)
+    if err != nil {
+        log.Fatal(err)
+    }
     
     // Middleware 1: Validation
     validateSKU := func(
@@ -840,7 +988,10 @@ func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
 ```go
 // Application 1: HTTP API server
 func main() {
-    db, _ := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+    db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+    if err != nil {
+        log.Fatal(err)
+    }
     logger := NewLogger()
     cache := NewCache()
     
@@ -855,7 +1006,10 @@ func main() {
 
 // Application 2: Background worker (shares same db/logger)
 func main() {
-    db, _ := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+    db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+    if err != nil {
+        log.Fatal(err)
+    }
     
     // Run migrations first (REQUIRED for external apps)
     if err := services.AutoMigrate(db); err != nil {
@@ -870,7 +1024,10 @@ func main() {
     
     // Use directly without HTTP layer
     ctx := context.Background()
-    products, _ := productService.List(ctx, 100, 0)
+    products, err := productService.List(ctx, 100, 0)
+    if err != nil {
+        log.Fatal(err)
+    }
     for _, p := range products {
         // Process products...
     }
@@ -913,7 +1070,7 @@ func TestProductHandler_Create(t *testing.T) {
         Name: "Test Product",
         Sku:  "TEST-001",
     }
-    body, _ := json.Marshal(reqBody)
+    body, _ := json.Marshal(reqBody)  // Error handling omitted for test setup brevity
     req := httptest.NewRequest("POST", "/api/products", bytes.NewReader(body))
     rec := httptest.NewRecorder()
     
@@ -1753,7 +1910,7 @@ func TestEnrollmentAcceptanceScenarios(t *testing.T) {
             tc.setupFixtures()
             
             // Create HTTP request
-            body, _ := json.Marshal(tc.request)
+            body, _ := json.Marshal(tc.request)  // Error handling omitted for test setup brevity
             req := httptest.NewRequest(http.MethodPost, "/v1/loyalty/enroll", bytes.NewReader(body))
             req.Header.Set("Content-Type", "application/json")
             
@@ -1826,7 +1983,6 @@ func TestEnrollCustomer(t *testing.T) {
 - AI agents MUST create one test case per acceptance scenario (minimum) in table-driven test
 - AI agents MUST use test case `name` field with scenario reference (e.g., "US1-AS1: New customer enrolls")
 - AI agents MUST use table-driven test design with test case structs
-- AI agents SHOULD include `scenario` field in test case struct with Given/When/Then for documentation
 - AI agents SHOULD generate traceability matrix showing scenario-to-test mapping (optional but recommended)
 - AI agents MUST flag any scenarios that cannot be tested with justification
 - AI agents MUST update tests when specifications change to add/modify scenarios
@@ -2245,9 +2401,11 @@ All pull requests MUST be reviewed against these constitutional requirements, or
 
 This constitution is version-controlled alongside code and follows the same review process as code changes.
 
-**Version**: 1.3.1 | **Ratified**: 2025-11-20 | **Last Amended**: 2025-11-21
+**Version**: 1.3.3 | **Ratified**: 2025-11-20 | **Last Amended**: 2025-11-22
 
 **Version History**:
+- **1.3.3** (2025-11-22): Fixed example code violations - corrected all example code to follow Principle IX (Comprehensive Error Handling). Added proper error handling to examples in Principles VII and VIII where errors were being ignored. Added explanatory comments to test setup code where error handling omission is acceptable for brevity.
+- **1.3.2** (2025-11-22): Enhanced Principle VI (Protobuf Data Structures) - added strict definitions and anti-patterns section. Explicitly defines what qualifies as "truly random/generated" (only UUIDs, timestamps, crypto/rand values). Prohibits claiming fixture default values are "unknowable" or "can't derive". Requires AI agents to read fixture code before writing tests. Adds zero-tolerance code review enforcement protocol.
 - **1.3.1** (2025-11-21): Enhanced Principle VI (Protobuf Data Structures) - strengthened test fixture guidance to explicitly derive expected values from test fixtures (request data, DB fixtures, config) NOT response data, except for truly random/generated fields
 - **1.3.0** (2025-11-21): Added Principle XIII (Acceptance Scenario Coverage) - requires one-to-one mapping between spec acceptance scenarios and integration tests using table-driven design and protocmp
 - **1.2.0** (2025-11-20): Added Principle XII (Root Cause Tracing) - requires debugging problems at source, not symptoms

@@ -129,8 +129,10 @@
 - ⚠️ **CRITICAL**: ALL protobuf message assertions MUST use `cmp.Diff()` with `protocmp.Transform()`
 - ❌ **NEVER** use individual field comparisons (e.g., `if response.Name != expected.Name`)
 - ❌ **NEVER** use `==` or `reflect.DeepEqual` for protobuf messages
-- ✅ **ALWAYS** build expected from REQUEST data (what you sent), NOT from response data
-- ✅ **ONLY** copy generated fields (ID, timestamps) from response to expected
+- ✅ **ALWAYS** build expected from TEST FIXTURES (request data, database fixtures, config), NOT from response data
+- ✅ **ONLY** copy truly random fields from response: UUIDs, timestamps, crypto/rand values (Constitution v1.3.2)
+- ❌ **NEVER** copy fixture defaults or configuration values from response claiming "can't derive"
+- ✅ **MUST** read `testutil/fixtures.go` to identify default values before writing assertions
 - Verify complete message comparison catches all field differences
 
 **Context Handling**:

@@ -8,7 +8,7 @@ description: "Task list template for feature implementation"
 **Input**: Design documents from `/specs/[###-feature-name]/`
 **Prerequisites**: plan.md (required), spec.md (required for user stories), research.md, data-model.md, contracts/
 
-**Tests**: Integration tests are MANDATORY per constitution. All tests use real PostgreSQL database via testcontainers-go (no mocking), follow table-driven patterns, use GORM for fixtures, use protobuf structs (NOT maps), verify OpenTracing instrumentation, and cover comprehensive edge cases. Tests are conducted at HTTP layer only (httptest), which exercises the full stack: HTTP → Service → Repository → Database.
+**Tests**: Integration tests are MANDATORY per constitution. All tests use real PostgreSQL database via testcontainers-go (no mocking), follow table-driven patterns, use GORM for fixtures, use protobuf structs (NOT maps), verify OpenTracing instrumentation, and cover comprehensive edge cases. Tests are conducted at HTTP layer only (httptest), which exercises the full stack: HTTP → Service → Repository → Database. **Test assertions MUST derive expected values from fixtures** (request data, database fixtures, config), NOT from response data. Only truly random fields (UUIDs, timestamps, crypto/rand) may use response values (Constitution v1.3.2).
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
 
@@ -120,6 +120,9 @@ description: "Task list template for feature implementation"
   - Use protobuf structs (NOT maps) for request/response
   - Use `cmp.Diff()` with `protocmp.Transform()` for ALL protobuf message assertions (MANDATORY)
   - Do NOT use individual field comparisons for protobuf messages
+  - **Build expected from fixtures** (request data, DB fixtures, config), NOT response data (Principle VI v1.3.2)
+  - **Read `testutil/fixtures.go`** before writing assertions to identify default values (MANDATORY)
+  - **Only use response values** for truly random fields: UUIDs, timestamps, crypto/rand (Constitution v1.3.2)
   - Verify OpenTracing spans are created (NoopTracer default, mock tracer for span verification tests)
   - Verify context.Context is passed through all layers (HTTP → Service → Repository)
   - Verify errors are wrapped with contextual information using `fmt.Errorf("%w", err)`
@@ -166,6 +169,8 @@ description: "Task list template for feature implementation"
     - Test function: `TestFeature[UserStory]AcceptanceScenarios` (table-driven)
     - Test case `name` field: "US2-AS1: [Description]", "US2-AS2: [Description]"
     - Use `cmp.Diff()` with `protocmp.Transform()` for protobuf assertions (MANDATORY)
+    - Build expected from fixtures (request, DB, config), NOT response - Constitution v1.3.2
+    - Read `testutil/fixtures.go` to identify default values before writing assertions
   - Table-driven tests with comprehensive edge cases per constitution
   
 - [ ] T019 [US2] Create acceptance scenario traceability matrix (optional but recommended)
