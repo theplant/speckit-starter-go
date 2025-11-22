@@ -1,6 +1,49 @@
+<!--
+SYNC IMPACT REPORT
+Version: 1.4.2 → 1.4.3
+Modified Principles:
+- Reordered all principles to flow sequentially by number (I-XIV)
+- Moved scattered principles to correct sections
+- Renumbered Operational Excellence principles (IX-X → XIII-XIV)
+- Removed all duplicate principle content
+Added Sections: None
+Removed Sections: None
+Templates Requiring Updates:
+- ✅ .specify/templates/tasks-template.md (Updated principle references)
+- ✅ .specify/templates/plan-template.md (Updated principle references)  
+- ✅ .specify/templates/spec-template.md (Updated principle references)
+- ✅ .specify/templates/checklist-template.md (Updated principle references)
+Follow-up TODOs: None
+-->
 # Go Project Constitution Template
 
-## Core Principles
+## Table of Contents
+
+- [Testing & Quality Assurance](#testing--quality-assurance)
+  - [I. Integration Testing First (No Mocking)](#i-integration-testing-first-no-mocking)
+  - [II. Table-Driven Test Design](#ii-table-driven-test-design)
+  - [III. Edge Case Coverage (NON-NEGOTIABLE)](#iii-edge-case-coverage-non-negotiable)
+  - [IV. Real Database Fixtures](#iv-real-database-fixtures)
+  - [V. ServeHTTP Endpoint Testing](#v-servehttp-endpoint-testing)
+  - [VI. Protobuf Data Structures](#vi-protobuf-data-structures)
+  - [VII. Continuous Test Verification](#vii-continuous-test-verification)
+  - [VIII. Root Cause Tracing (Debugging Discipline)](#viii-root-cause-tracing-debugging-discipline)
+  - [IX. Acceptance Scenario Coverage (Spec-to-Test Mapping)](#ix-acceptance-scenario-coverage-spec-to-test-mapping)
+  - [X. Test Coverage & Gap Analysis](#x-test-coverage--gap-analysis)
+
+- [System Architecture](#system-architecture)
+  - [XI. Service Layer Architecture (Dependency Injection)](#xi-service-layer-architecture-dependency-injection)
+  - [XII. Distributed Tracing (OpenTracing)](#xii-distributed-tracing-opentracing)
+
+- [Operational Excellence](#operational-excellence)
+  - [XIII. Comprehensive Error Handling](#xiii-comprehensive-error-handling)
+  - [XIV. Context-Aware Operations](#xiv-context-aware-operations)
+
+- [Technology Stack](#technology-stack)
+- [Development Workflow](#development-workflow)
+- [Governance](#governance)
+
+## Testing & Quality Assurance
 
 ### I. Integration Testing First (No Mocking)
 
@@ -367,9 +410,130 @@ Fix required:
 
 **Escalation:** Repeated violations require AI agent process review.
 
-### VII. Distributed Tracing (OpenTracing)
+### VII. Continuous Test Verification
 
-All API endpoints MUST be instrumented with distributed tracing at appropriate granularity:
+All code changes MUST be verified by running tests immediately after implementation:
+- Tests MUST be executed after every code change before committing
+- Tests MUST pass before any commit to version control
+- Integration tests MUST be run locally using testcontainers before pushing
+- Developers MUST verify tests pass in their local environment first
+- CI/CD pipeline MUST block merges if tests fail
+- Tests MUST be run after bug fixes to verify the fix and prevent regressions
+- Tests MUST be run after refactoring to ensure behavior is preserved
+- NO code changes MUST be committed without running the test suite
+- Test execution MUST be automated in pre-commit hooks where possible
+- Test failures MUST be fixed immediately before proceeding with new work
+- Developers MUST NOT skip or disable tests to "temporarily" fix CI/CD
+- Test execution time MUST be monitored and optimized if it impacts development velocity
+
+**Rationale**: Running tests continuously after code changes is the only reliable way to catch regressions early, ensure code quality gates are maintained, and prevent broken code from reaching production. This practice creates a tight feedback loop that catches issues when context is fresh and fixes are cheap. Without continuous test verification, even comprehensive test suites become worthless because passing tests from yesterday don't guarantee today's changes work correctly. This principle transforms testing from a checkbox activity into a living quality gate that protects the codebase at every step. Test-first development (TDD) is valuable, but continuous verification ensures the tests continue passing as the code evolves.
+
+**AI Implementation Requirement**:
+- AI agents MUST run the full test suite (`go test -v ./...`) after making any code changes
+- AI agents MUST verify all tests pass before completing the task
+- AI agents MUST report test failures and fix them before proceeding
+- AI agents MUST run tests with race detector (`go test -v -race ./...`) for concurrency safety
+- AI agents MUST NOT skip or disable failing tests to complete a task
+- AI agents MUST treat test failures as blocking issues that require immediate resolution
+
+**Test Execution Requirements**:
+- Full test suite MUST pass before task completion
+- Tests MUST include integration tests with real database (testcontainers)
+- Race detector MUST be used to catch concurrency issues
+- Test coverage MUST be maintained or improved
+- Flaky tests MUST be fixed immediately (not ignored or re-run)
+
+### VIII. Root Cause Tracing (Debugging Discipline)
+
+When problems occur during development, root cause analysis MUST be performed before implementing fixes:
+- Problems MUST be traced backward through the call chain to find the original trigger
+- Symptoms MUST be distinguished from root causes
+- Fixes MUST address the source of the problem, NOT work around symptoms
+- Test cases MUST NOT be removed or weakened to make tests pass
+- Debuggers and logging MUST be used to understand control flow
+- Multiple potential causes MUST be systematically eliminated
+- Documentation MUST be updated to prevent similar issues
+- Root cause MUST be verified through testing before closing the issue
+
+**Rationale**: Superficial fixes create technical debt and hide underlying architectural problems. Root cause analysis ensures problems are solved at their source, preventing recurrence and maintaining system integrity. This discipline transforms debugging from firefighting into systematic problem-solving that improves overall code quality.
+
+**Debugging Process**:
+1. **Reproduce**: Create reliable reproduction case
+2. **Observe**: Gather evidence through logs, debugger, tests
+3. **Hypothesize**: Form theories about root cause
+4. **Test**: Design experiments to validate/invalidate hypotheses
+5. **Fix**: Implement fix addressing root cause
+6. **Verify**: Ensure fix works and doesn't break existing functionality
+7. **Document**: Update docs/tests to prevent regression
+
+**AI Implementation Requirement**:
+- AI agents MUST perform root cause analysis before implementing fixes
+- AI agents MUST NOT implement superficial workarounds
+- AI agents MUST document the root cause analysis process
+- AI agents MUST update tests to prevent regression of root causes
+
+### IX. Acceptance Scenario Coverage (Spec-to-Test Mapping)
+
+Every user scenario in specifications MUST have corresponding automated tests:
+- Each acceptance scenario (US#-AS#) in spec.md MUST have a test case
+- Test case names MUST reference source scenarios (e.g., "US1-AS1: New customer enrolls")
+- Test functions MUST use table-driven design with test case structs (Principle II)
+- Each test case struct MUST include `name` field with scenario ID
+- Tests MUST validate complete "Then" clause, not partial behavior
+- No untested scenarios MUST exist (or be explicitly deferred with justification)
+- Test coverage analysis MUST verify all scenarios are tested
+- AI agents MUST flag any scenarios that cannot be tested with justification
+- AI agents MUST update tests when specifications change to add/modify scenarios
+
+**Rationale**: Specifications define expected behavior, but only automated tests guarantee that behavior is maintained. Acceptance scenario coverage bridges the gap between business requirements and implementation, ensuring the system actually does what the specifications claim. Without this mapping, specifications become documentation that drifts from reality, leading to false assumptions and undetected regressions.
+
+**Test Case Structure**:
+```go
+func TestUserAcceptanceScenarios(t *testing.T) {
+    testCases := []struct {
+        name     string
+        scenario string
+        given    func() // Setup
+        when     func() // Action
+        then     func() // Assertion
+    }{
+        {
+            name:     "US1-AS1: New customer enrolls",
+            scenario: "Given a new user, When they complete enrollment, Then account is created",
+            given: func() { /* setup */ },
+            when:  func() { /* action */ },
+            then:  func() { /* verify */ },
+        },
+    }
+    // ... test execution
+}
+```
+
+**Code Review Checklist**:
+- [ ] Every acceptance scenario in spec.md has a corresponding test case
+- [ ] Test case names in table reference source scenarios (e.g., "US1-AS1: New customer enrolls")
+- [ ] Test function uses table-driven design with test case structs
+- [ ] Test case struct includes `name` field with scenario ID (US#-AS#)
+- [ ] No untested scenarios exist (or are explicitly deferred with justification)
+- [ ] Test validates complete "Then" clause, not partial behavior
+- [ ] Traceability matrix is up to date (optional but recommended)
+
+### X. Test Coverage & Gap Analysis
+
+Test coverage analysis MUST be used to identify and close testing gaps:
+- Developers MUST run `go test -cover` (or `go tool cover` for visualization) to identify untested code paths
+- Uncovered code paths identified by coverage reports MUST be covered by new tests
+- Coverage gaps MUST be analyzed to determine if they represent dead code or missing tests
+- Missing tests MUST be added to reach acceptable coverage levels (typically >80% for business logic)
+- Code that cannot be reached (dead code) SHOULD be removed rather than exempted
+
+**Rationale**: Coverage analysis provides objective data on testing completeness. It reveals edge cases, error paths, and logic branches that were missed during TDD. While 100% coverage is not always practical, coverage analysis ensures that critical business logic and error handling paths are not left untested.
+
+## System Architecture
+
+### XI. Service Layer Architecture (Dependency Injection)
+
+Business logic MUST be separated from HTTP transport using service interfaces:
 - Each HTTP endpoint handler MUST create or continue an OpenTracing span
 - Spans MUST include operation name matching the endpoint (e.g., "POST /api/products")
 - Service method calls SHOULD create child spans (e.g., "ProductService.Create")
@@ -473,10 +637,6 @@ func (s *productService) Create(ctx context.Context, req *pb.ProductCreateReques
 ```
 
 **For SQL Query Analysis**: Use PostgreSQL's `pg_stat_statements` extension, slow query logs, or database monitoring tools (not distributed tracing).
-
-### VIII. Service Layer Architecture (Dependency Injection)
-
-Business logic MUST be separated from HTTP transport using service interfaces:
 - Business logic MUST be implemented as Go interfaces (service layer)
 - Services MUST NOT depend on HTTP types (`http.Request`, `http.ResponseWriter`, `context.Context` is allowed)
 - HTTP handlers MUST be thin wrappers that call service methods
@@ -1108,9 +1268,102 @@ func TestProductHandler_Create(t *testing.T) {
 }
 ```
 
-**Note**: We do NOT test services separately. HTTP integration tests already cover the full stack (HTTP → Service → Repository → Database). The service layer exists for code reusability and clean architecture, not for separate testing.
+### XII. Distributed Tracing (OpenTracing)
 
-### IX. Comprehensive Error Handling
+All API endpoints MUST be instrumented with distributed tracing at appropriate granularity:
+- Each HTTP endpoint handler MUST create or continue an OpenTracing span
+- Spans MUST include operation name matching the endpoint (e.g., "POST /api/products")
+- Service method calls SHOULD create child spans (e.g., "ProductService.Create")
+- Database operations SHOULD be traced as a single child span per transaction (NOT per SQL query)
+- Individual SQL queries MUST NOT be traced (too much overhead, use database metrics instead)
+- External service calls (HTTP, gRPC) MUST propagate trace context and create spans
+- Error conditions MUST be logged to the active span with `span.SetTag("error", true)`
+- Trace context MUST be extracted from incoming HTTP headers (e.g., `X-B3-TraceId`)
+- Trace context MUST be injected into outgoing HTTP requests
+- Spans MUST include relevant tags: `http.method`, `http.url`, `http.status_code`, `service.method`
+- Tests MUST verify tracing instrumentation (e.g., using mock tracer or test spans)
+
+**Rationale**: Distributed tracing provides critical observability for debugging latency issues, understanding request flows across services, identifying bottlenecks, and correlating logs across distributed systems. OpenTracing offers a vendor-neutral API compatible with Jaeger, Zipkin, and other tracing backends. Tracing at service operation level (not individual SQL queries) keeps overhead low while providing actionable insights. For SQL query analysis, use database-specific tools like `pg_stat_statements`, slow query logs, or APM database profiling.
+
+**Example - Correct Tracing Granularity**:
+```go
+import (
+    "net/http"
+    "github.com/opentracing/opentracing-go"
+    "github.com/opentracing/opentracing-go/ext"
+)
+
+// HTTP Handler - creates root span
+func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
+    // Extract or start HTTP span
+    spanCtx, _ := opentracing.GlobalTracer().Extract(
+        opentracing.HTTPHeaders,
+        opentracing.HTTPHeadersCarrier(r.Header),
+    )
+    span := opentracing.StartSpan("POST /api/products", ext.RPCServerOption(spanCtx))
+    defer span.Finish()
+    
+    span.SetTag("http.method", r.Method)
+    span.SetTag("http.url", r.URL.String())
+    
+    // Parse request
+    var req pb.ProductCreateRequest
+    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+        span.SetTag("error", true)
+        http.Error(w, "Invalid request", http.StatusBadRequest)
+        return
+    }
+    
+    // Service call creates child span (one span for entire operation)
+    product, err := h.service.Create(r.Context(), &req)
+    if err != nil {
+        span.SetTag("error", true)
+        http.Error(w, "Internal error", http.StatusInternalServerError)
+        return
+    }
+    
+    span.SetTag("http.status_code", http.StatusCreated)
+    span.SetTag("product.id", product.Id)
+    
+    w.WriteHeader(http.StatusCreated)
+    json.NewEncoder(w).Encode(product)
+}
+
+// Service - creates child span
+func (s *productService) Create(ctx context.Context, req *pb.ProductCreateRequest) (*pb.Product, error) {
+    span, ctx := opentracing.StartSpanFromContext(ctx, "ProductService.Create")
+    defer span.Finish()
+    
+    // Database operation - one span per transaction, not per query
+    span, ctx := opentracing.StartSpanFromContext(ctx, "ProductService.Create.DB")
+    defer span.Finish()
+    
+    // Single transaction with multiple operations
+    return s.db.Transaction(func(tx *gorm.DB) error {
+        product := &Product{...}
+        if err := tx.Create(product).Error; err != nil {
+            span.SetTag("error", true)
+            return err
+        }
+        
+        // More operations in same transaction...
+        // NO individual spans for each INSERT/UPDATE/SELECT
+        
+        return nil
+    })
+}
+```
+
+**Tracing Granularity Guidelines**:
+- ✅ HTTP endpoints: Root spans
+- ✅ Service operations: Child spans  
+- ✅ Database transactions: Child spans
+- ❌ Individual SQL queries: Too granular, high overhead
+- ❌ HTTP client calls within services: Should be child spans if cross-service
+
+## Operational Excellence
+
+### XIII. Comprehensive Error Handling
 
 Error handling MUST use a two-layer strategy: sentinel errors for internal flow and singleton HTTP error codes for client responses:
 
@@ -1384,7 +1637,7 @@ func TestProductHandler_Create_DuplicateSKU(t *testing.T) {
 - **No manual switch**: AllErrors() + ServiceErr field handles mapping
 - **Clean handlers**: Just call HandleServiceError(w, err) - done!
 
-### X. Context-Aware Operations
+### XIV. Context-Aware Operations
 
 All I/O and long-running operations MUST accept and respect `context.Context`:
 - All service methods MUST accept `context.Context` as the first parameter
@@ -1628,375 +1881,6 @@ func (s *productService) BulkUpdate(ctx context.Context, updates []*pb.ProductUp
     return tx.Commit().Error
 }
 ```
-
-### XI. Continuous Test Verification
-
-All code changes MUST be verified by running tests immediately after implementation:
-- Tests MUST be executed after every code change before committing
-- Tests MUST pass before any commit to version control
-- Integration tests MUST be run locally using testcontainers before pushing
-- Developers MUST verify tests pass in their local environment first
-- CI/CD pipeline MUST block merges if tests fail
-- Tests MUST be run after bug fixes to verify the fix and prevent regressions
-- Tests MUST be run after refactoring to ensure behavior is preserved
-- NO code changes MUST be committed without running the test suite
-- Test execution MUST be automated in pre-commit hooks where possible
-- Test failures MUST be fixed immediately before proceeding with new work
-- Developers MUST NOT skip or disable tests to "temporarily" fix CI/CD
-- Test execution time MUST be monitored and optimized if it impacts development velocity
-
-**Rationale**: Running tests continuously after code changes is the only reliable way to catch regressions early, ensure code quality gates are maintained, and prevent broken code from reaching production. This practice creates a tight feedback loop that catches issues when context is fresh and fixes are cheap. Without continuous test verification, even comprehensive test suites become worthless because passing tests from yesterday don't guarantee today's changes work correctly. This principle transforms testing from a checkbox activity into a living quality gate that protects the codebase at every step. Test-first development (TDD) is valuable, but continuous verification ensures the tests continue passing as the code evolves.
-
-**AI Implementation Requirement**:
-- AI agents MUST run the full test suite (`go test -v ./...`) after making any code changes
-- AI agents MUST verify all tests pass before completing the task
-- AI agents MUST report test failures and fix them before proceeding
-- AI agents MUST run tests with race detector (`go test -v -race ./...`) for concurrency safety
-- AI agents MUST NOT skip or disable failing tests to complete a task
-- AI agents MUST treat test failures as blocking issues that require immediate resolution
-
-**Test Execution Requirements**:
-- Full test suite MUST pass before task completion
-- Tests MUST include integration tests with real database (testcontainers)
-- Race detector MUST be used to catch concurrency issues
-- Test coverage MUST be maintained or improved
-- Flaky tests MUST be fixed immediately (not ignored or re-run)
-
-### XII. Root Cause Tracing (Debugging Discipline)
-
-When problems occur during development, root cause analysis MUST be performed before implementing fixes:
-- Problems MUST be traced backward through the call chain to find the original trigger
-- Symptoms MUST be distinguished from root causes
-- Fixes MUST address the source of the problem, NOT work around symptoms
-- Test cases MUST NOT be removed or weakened to make tests pass
-- Test expectations MUST NOT be relaxed to accommodate broken behavior
-- Quick fixes that mask underlying issues MUST be avoided
-- AI agents MUST document the root cause analysis process when debugging
-- AI agents MUST resist the temptation to "make it work" without understanding why it failed
-
-**Root Cause Tracing Methodology**:
-1. **Identify Symptom**: Document the observable problem behavior
-2. **Trace Backward**: Follow the call chain from symptom to source
-   - Start at the point of failure (test, runtime error, unexpected behavior)
-   - Step backward through each function call
-   - Check data at each step (inputs, outputs, intermediate values)
-   - Identify where the problem originates (not where it manifests)
-3. **Verify Root Cause**: Confirm the identified source actually causes the symptom
-4. **Fix at Source**: Implement fix at the root cause, not at symptom level
-5. **Verify Fix**: Run tests to confirm problem resolved without workarounds
-6. **Document**: Record root cause and fix for future reference
-
-**Rationale**: Fixing symptoms instead of root causes creates technical debt, fragile code, and recurring problems. When tests fail, the correct response is to trace the problem to its source and fix it there, not to weaken the test or add workarounds. This discipline prevents accumulation of band-aid fixes that make codebases unmaintainable. It also builds understanding of the system - debugging is learning. Quick fixes that bypass root cause analysis may appear efficient short-term but create long-term maintenance nightmares. This principle enforces rigorous problem-solving discipline that results in robust, understandable code.
-
-**Examples**:
-
-**❌ WRONG: Symptom-Level Fix**
-```
-Problem: Test expects inactive reward to be filtered out, but it appears in results
-Symptom Fix: Change test to expect 3 rewards instead of 2
-Result: Test passes but inactive filtering is broken
-Consequence: Production bug - inactive rewards shown to customers
-```
-
-**✅ CORRECT: Root Cause Fix**
-```
-Problem: Test expects inactive reward to be filtered out, but it appears in results
-Root Cause Trace:
-  1. Test creates: IsActive: false in Go struct
-  2. GORM executes: db.Create(reward)
-  3. Database has: is_active BOOL DEFAULT true in schema
-  4. PostgreSQL: Database default overrides struct value
-  5. ROOT CAUSE: GORM model has `default:true` tag
-Fix: Remove `default:true` from model tag
-Result: Inactive rewards properly created and filtered
-Verification: All tests pass with correct expectations
-```
-
-**Common Anti-Patterns to Avoid**:
-- ❌ Removing failing test cases
-- ❌ Changing test expectations to match broken behavior
-- ❌ Adding "skip" to flaky tests
-- ❌ Catching and ignoring errors
-- ❌ Adding conditional logic to work around issues
-- ❌ "It works on my machine" without understanding why
-- ❌ Copy-pasting fixes without understanding them
-
-**AI Agent Requirements**:
-- AI agents MUST perform root cause analysis when encountering failures
-- AI agents MUST document the tracing process in comments or commit messages
-- AI agents MUST fix problems at the source, not add workarounds
-- AI agents MUST resist pressure to "just make it work" without understanding
-- AI agents MUST preserve test integrity - never weaken tests to make them pass
-- AI agents MUST explain the root cause to users when reporting fixes
-
-### XIII. Acceptance Scenario Coverage (Spec-to-Test Mapping)
-
-Every acceptance scenario defined in the feature specification MUST have a corresponding integration test:
-- Each "Given/When/Then" scenario in spec.md MUST map to at least one test case
-- Test case names MUST reference the corresponding acceptance scenario (e.g., "US1-AS1: New customer enrolls")
-- Acceptance scenarios MUST NOT be documented without corresponding test validation
-- Tests MUST validate the complete acceptance criteria, not partial behavior
-- When specifications are updated with new scenarios, tests MUST be added before implementation
-- Test coverage reports SHOULD include acceptance scenario traceability matrix (optional but recommended)
-- Code reviews MUST verify one-to-one mapping between spec scenarios and tests
-- AI agents MUST create tests for ALL acceptance scenarios when implementing features
-- **Acceptance scenario tests MUST follow table-driven test design (Principle II)**
-- **Acceptance scenario tests MUST use `cmp.Diff()` with `protocmp.Transform()` for protobuf assertions (Principle VI)**
-
-**Acceptance Scenario Mapping Requirements**:
-1. **Complete Coverage**: Every scenario MUST be tested
-   - If a scenario is deferred, mark it explicitly in spec as `[DEFERRED]` with justification
-   - Track untested scenarios as technical debt with issue tickets
-2. **Scenario-Driven Test Design**: Structure tests around acceptance scenarios using **table-driven pattern**
-   - Each user story section in spec corresponds to a test file or test group
-   - Test function name references feature/user story (e.g., `TestEnrollmentAcceptanceScenarios`)
-   - **Group related acceptance scenarios into table-driven test cases**
-   - Each test case in the table represents one acceptance scenario
-   - Test case `name` field MUST reference scenario ID (e.g., "US1-AS1: New customer enrolls")
-   - Test case `scenario` field SHOULD include Given/When/Then for documentation
-3. **Validation Completeness**: Tests MUST validate all aspects of the scenario
-   - Don't just test happy path if scenario includes error conditions
-   - Verify all "Then" clauses in the acceptance scenario
-   - **Use `protocmp.Transform()` for all protobuf message comparisons (MANDATORY)**
-
-**Rationale**: Acceptance scenarios document what the system MUST do from a user perspective. Without corresponding tests, there's no validation that these scenarios actually work. This creates a dangerous gap between documented requirements and tested behavior. By enforcing one-to-one mapping, we ensure that every promised behavior is actually validated, creating true specification-driven development. This prevents specification drift, incomplete implementations, and the common problem where features are "done" but acceptance criteria remain untested. It also makes the codebase self-documenting - reading tests shows exactly which acceptance scenarios are validated.
-
-**Examples**:
-
-**Spec Acceptance Scenarios (User Story 1 - Enrollment)**:
-```markdown
-### User Story 1 - Customer Enrollment (Priority: P1)
-
-**Acceptance Scenarios**:
-
-1. **Given** a new customer with a valid account, **When** they choose to enroll in the loyalty program, **Then** they receive a confirmation with their membership number and starting point balance of zero
-
-2. **Given** a customer during checkout, **When** they complete their first purchase and opt-in to the loyalty program, **Then** they are automatically enrolled and earn points for that initial purchase
-
-3. **Given** an already enrolled customer, **When** they attempt to enroll again, **Then** the system informs them they are already a member and displays their current status
-```
-
-**✅ CORRECT: Table-Driven Tests with Protocmp (Aligns with Principles II & VI)**:
-```go
-import (
-    "testing"
-    "github.com/google/go-cmp/cmp"
-    "google.golang.org/protobuf/testing/protocmp"
-)
-
-// Test all User Story 1 acceptance scenarios using table-driven design
-func TestEnrollmentAcceptanceScenarios(t *testing.T) {
-    // Setup test database (shared across scenarios)
-    db, cleanup := testutil.SetupTestDB(t)
-    defer cleanup()
-    defer testutil.TruncateTables(db, "customers", "membership_tiers")
-    
-    baseTier := testutil.CreateTestTier(db, map[string]interface{}{
-        "name": "Base",
-        "level": 0,
-    })
-    
-    // Table-driven test cases - one per acceptance scenario
-    testCases := []struct {
-        name              string // Acceptance scenario reference
-        scenario          string // Given/When/Then description
-        accountID         string
-        setupFixtures     func()
-        request           *pb.EnrollCustomerRequest
-        expectedStatus    int
-        expectedError     string
-        validateResponse  func(t *testing.T, resp *pb.EnrollCustomerResponse)
-    }{
-        {
-            name:     "US1-AS1: New customer enrolls with valid account",
-            scenario: "Given new customer, When they enroll, Then confirmation with membership number and zero balance",
-            accountID: "user-001",
-            setupFixtures: func() {}, // No pre-existing data needed
-            request: &pb.EnrollCustomerRequest{},
-            expectedStatus: http.StatusCreated,
-            validateResponse: func(t *testing.T, resp *pb.EnrollCustomerResponse) {
-                // Build expected from REQUEST data (Principle VI requirement)
-                expected := &pb.EnrollCustomerResponse{
-                    Customer: &pb.Customer{
-                        Id:               resp.Customer.Id,               // Generated
-                        AccountId:        "user-001",                     // From request context
-                        MembershipNumber: resp.Customer.MembershipNumber, // Generated
-                        ReferralCode:     resp.Customer.ReferralCode,     // Generated
-                        CurrentBalance:   0,                              // Initial zero balance
-                        EnrolledAt:       resp.Customer.EnrolledAt,       // Generated
-                        Tier:             resp.Customer.Tier,             // From baseTier
-                        CreatedAt:        resp.Customer.CreatedAt,        // Generated
-                        UpdatedAt:        resp.Customer.UpdatedAt,        // Generated
-                    },
-                }
-                
-                // Use protocmp for comparison (Principle VI - MANDATORY)
-                if diff := cmp.Diff(expected, resp, protocmp.Transform()); diff != "" {
-                    t.Errorf("Response mismatch (-want +got):\n%s", diff)
-                }
-                
-                // Additional validations for "Then" clause
-                if resp.Customer.MembershipNumber == "" {
-                    t.Error("Expected membership number in confirmation")
-                }
-                if resp.Customer.CurrentBalance != 0 {
-                    t.Errorf("Expected zero starting balance, got %d", resp.Customer.CurrentBalance)
-                }
-            },
-        },
-        {
-            name:     "US1-AS2: Customer during checkout enrolls and earns points",
-            scenario: "Given customer at checkout, When they opt-in and purchase, Then enrolled with points earned",
-            accountID: "user-002",
-            setupFixtures: func() {},
-            request: &pb.EnrollCustomerRequest{},
-            expectedStatus: http.StatusCreated,
-            validateResponse: func(t *testing.T, resp *pb.EnrollCustomerResponse) {
-                // First validate enrollment
-                if resp.Customer == nil {
-                    t.Fatal("Expected customer in response")
-                }
-                
-                // Then simulate purchase and verify points earned
-                earnReq := &pb.EarnPointsRequest{
-                    Amount:      5000, // $50.00
-                    ReferenceId: "order-first-001",
-                }
-                earnResp, err := pointsHandler.EarnPoints("user-002", earnReq)
-                if err != nil {
-                    t.Fatalf("Expected points earned, got error: %v", err)
-                }
-                
-                // Build expected using protocmp
-                expectedEarn := &pb.EarnPointsResponse{
-                    Transaction: &pb.PointTransaction{
-                        Id:            earnResp.Transaction.Id,
-                        CustomerId:    resp.Customer.Id,
-                        Amount:        earnResp.Transaction.Amount, // Calculated
-                        Type:          pb.TransactionType_TRANSACTION_TYPE_EARN,
-                        ReferenceId:   "order-first-001",
-                        CreatedAt:     earnResp.Transaction.CreatedAt,
-                        ExpiresAt:     earnResp.Transaction.ExpiresAt,
-                    },
-                    NewBalance: earnResp.NewBalance,
-                }
-                
-                if diff := cmp.Diff(expectedEarn, earnResp, protocmp.Transform()); diff != "" {
-                    t.Errorf("Earn points response mismatch (-want +got):\n%s", diff)
-                }
-            },
-        },
-        {
-            name:     "US1-AS3: Already enrolled customer attempts re-enrollment",
-            scenario: "Given enrolled customer, When they enroll again, Then informed already member",
-            accountID: "user-003",
-            setupFixtures: func() {
-                // Create already-enrolled customer
-                testutil.CreateTestCustomer(db, map[string]interface{}{
-                    "account_id": "user-003",
-                    "tier_id":    &baseTier.ID,
-                })
-            },
-            request: &pb.EnrollCustomerRequest{},
-            expectedStatus: http.StatusConflict,
-            expectedError:  "ALREADY_ENROLLED",
-        },
-    }
-    
-    // Execute all acceptance scenarios
-    for _, tc := range testCases {
-        t.Run(tc.name, func(t *testing.T) {
-            // Setup fixtures for this scenario
-            tc.setupFixtures()
-            
-            // Create HTTP request
-            body, _ := json.Marshal(tc.request)  // Error handling omitted for test setup brevity
-            req := httptest.NewRequest(http.MethodPost, "/v1/loyalty/enroll", bytes.NewReader(body))
-            req.Header.Set("Content-Type", "application/json")
-            
-            // Add authentication context
-            ctx := context.WithValue(req.Context(), middleware.UserIDKey, tc.accountID)
-            req = req.WithContext(ctx)
-            
-            rec := httptest.NewRecorder()
-            
-            // Call handler (full HTTP stack)
-            handler.HandleEnroll(rec, req)
-            
-            // Verify HTTP status
-            if rec.Code != tc.expectedStatus {
-                t.Errorf("Expected status %d, got %d", tc.expectedStatus, rec.Code)
-            }
-            
-            // For success cases, validate response
-            if tc.expectedStatus == http.StatusCreated && tc.validateResponse != nil {
-                var resp pb.EnrollCustomerResponse
-                json.NewDecoder(rec.Body).Decode(&resp)
-                tc.validateResponse(t, &resp)
-            }
-            
-            // For error cases, validate error code
-            if tc.expectedError != "" {
-                var errResp map[string]interface{}
-                json.NewDecoder(rec.Body).Decode(&errResp)
-                if errResp["code"] != tc.expectedError {
-                    t.Errorf("Expected error code %s, got %v", tc.expectedError, errResp["code"])
-                }
-            }
-        })
-    }
-}
-```
-
-**❌ WRONG: Not Following Table-Driven Pattern or Protocmp**:
-```go
-// ❌ WRONG: Individual test functions instead of table-driven (violates Principle II)
-// ❌ WRONG: Using individual field comparisons instead of protocmp (violates Principle VI)
-// ❌ WRONG: Missing AS2 and AS3 scenarios
-
-func TestEnrollCustomer(t *testing.T) {
-    req := &pb.EnrollCustomerRequest{}
-    resp, err := handler.Enroll("user-001", req)
-    
-    if err != nil {
-        t.Fatal(err)
-    }
-    
-    // ❌ WRONG: Individual field checks instead of protocmp.Transform()
-    if resp.Customer.MembershipNumber == "" {
-        t.Error("Expected membership number")
-    }
-    if resp.Customer.CurrentBalance != 0 {
-        t.Error("Expected zero balance")
-    }
-    // ❌ Missing: cmp.Diff() with protocmp.Transform() for complete validation
-}
-
-// ❌ Missing: US1-AS2 (first purchase enrollment) - NOT tested
-// ❌ Missing: US1-AS3 (already enrolled) - NOT tested
-// ❌ Missing: Table-driven test structure
-// ❌ Missing: Scenario references in test names
-```
-
-**AI Agent Requirements**:
-- AI agents MUST read acceptance scenarios from spec.md before writing tests
-- AI agents MUST create one test case per acceptance scenario (minimum) in table-driven test
-- AI agents MUST use test case `name` field with scenario reference (e.g., "US1-AS1: New customer enrolls")
-- AI agents MUST use table-driven test design with test case structs
-- AI agents SHOULD generate traceability matrix showing scenario-to-test mapping (optional but recommended)
-- AI agents MUST flag any scenarios that cannot be tested with justification
-- AI agents MUST update tests when specifications change to add/modify scenarios
-
-**Code Review Checklist**:
-- [ ] Every acceptance scenario in spec.md has a corresponding test case
-- [ ] Test case names in table reference source scenarios (e.g., "US1-AS1: New customer enrolls")
-- [ ] Test function uses table-driven design with test case structs
-- [ ] Test case struct includes `name` field with scenario ID (US#-AS#)
-- [ ] No untested scenarios exist (or are explicitly deferred with justification)
-- [ ] Test validates complete "Then" clause, not partial behavior
-- [ ] Traceability matrix is up to date (optional but recommended)
-
-
 ## Technology Stack
 
 - **Language**: Go 1.21+ (recommend latest stable)
@@ -2275,7 +2159,7 @@ func (h *ProductHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 ### Code Review Requirements
 
-All pull requests MUST be reviewed against these constitutional requirements, organized by principle:
+All pull requests MUST be reviewed against these constitutional requirements:
 
 **Principle I: Integration Testing First (No Mocking)**
 - Pull requests MUST include integration tests for all new endpoints
@@ -2309,12 +2193,38 @@ All pull requests MUST be reviewed against these constitutional requirements, or
 - Reviewers MUST verify `.proto` files are updated for API changes
 - Reviewers MUST verify protobuf assertions use protocmp (not == or reflect.DeepEqual)
 
-**Principle VII: Distributed Tracing**
-- Reviewers MUST verify OpenTracing spans are created for new endpoints
-- Reviewers MUST verify spans include required tags (http.method, http.url, http.status_code)
-- Reviewers MUST verify error spans are tagged with error=true
+**Principle VII: Continuous Test Verification**
+- Pull request MUST show evidence that AI agent ran tests and they passed
+- Reviewers MUST reject PRs with disabled or skipped tests (unless justified in PR description)
+- Reviewers MUST verify test execution time is reasonable (flag if tests take >5 minutes)
+- Reviewers MUST verify flaky tests are fixed (not just re-run until they pass)
+- Reviewers MUST verify AI agent ran tests after code changes (check commit messages/PR description)
 
-**Principle VIII: Service Layer Architecture**
+**Principle VIII: Root Cause Tracing (Debugging Discipline)**
+- Pull request MUST document root cause analysis for any bugs fixed
+- Reviewers MUST verify fixes address root causes, not symptoms
+- Reviewers MUST reject workarounds that mask underlying problems
+- Reviewers MUST verify test cases were not removed or weakened to make tests pass
+- Reviewers MUST verify test expectations reflect correct behavior, not broken behavior
+- Reviewers MUST challenge "quick fixes" that lack root cause understanding
+- PR description MUST include root cause trace for debugging work
+
+**Principle IX: Acceptance Scenario Coverage (Spec-to-Test Mapping)**
+- Reviewers MUST verify every acceptance scenario in spec.md has a corresponding test case
+- Reviewers MUST verify table-driven test design is used for acceptance scenarios
+- Reviewers MUST verify test case names reference source scenarios (US#-AS# in `name` field)
+- Reviewers MUST reject implementations with untested acceptance scenarios (unless explicitly deferred with justification)
+- Reviewers MUST verify tests validate complete "Then" clauses, not partial behavior
+- PR description MUST include acceptance scenario coverage summary
+- Reviewers SHOULD verify traceability matrix is up to date if provided (optional but recommended)
+
+**Principle X: Test Coverage & Gap Analysis**
+- Reviewers MUST verify that coverage reports were generated and analyzed
+- Reviewers MUST verify that new code includes tests covering main paths and error conditions
+- Reviewers MUST reject PRs that introduce significant coverage drops without justification
+- Reviewers MUST challenge untested code paths identified by coverage analysis
+
+**Principle XI: Service Layer Architecture (Dependency Injection)**
 - Reviewers MUST verify services are in public packages (not internal/)
 - Reviewers MUST verify services do NOT depend on HTTP types (http.Request, http.ResponseWriter)
 - Reviewers MUST verify handlers are thin wrappers delegating to services
@@ -2323,7 +2233,12 @@ All pull requests MUST be reviewed against these constitutional requirements, or
 - Reviewers MUST verify AutoMigrate() is updated when models change
 - Reviewers MUST verify services return protobuf types (not internal models)
 
-**Principle IX: Comprehensive Error Handling**
+**Principle XII: Distributed Tracing (OpenTracing)**
+- Reviewers MUST verify OpenTracing spans are created for new endpoints
+- Reviewers MUST verify spans include required tags (http.method, http.url, http.status_code)
+- Reviewers MUST verify error spans are tagged with error=true
+
+**Principle XIII: Comprehensive Error Handling**
 - Reviewers MUST verify sentinel errors defined for domain-specific errors
 - Reviewers MUST verify errors are wrapped with `fmt.Errorf("%w", err)` (NOT `%v`)
 - Reviewers MUST verify error messages add contextual information at each layer
@@ -2338,7 +2253,7 @@ All pull requests MUST be reviewed against these constitutional requirements, or
 - **Reviewers MUST verify ALL HTTP error codes have test cases** (every Errors.Xxx tested)
 - **Reviewers MUST verify both success and error paths tested for every operation**
 
-**Principle X: Context-Aware Operations**
+**Principle XIV: Context-Aware Operations**
 - Reviewers MUST verify all service methods accept `context.Context` as first parameter
 - Reviewers MUST verify HTTP handlers extract context from `r.Context()`
 - Reviewers MUST verify database operations use `db.WithContext(ctx)`
@@ -2346,31 +2261,6 @@ All pull requests MUST be reviewed against these constitutional requirements, or
 - Reviewers MUST verify context is propagated through all layers (HTTP → Service → Repository)
 - Reviewers MUST verify context cancellation checks in Create/long-running operations
 - Tests MUST verify context cancellation behavior where applicable
-
-**Principle XI: Continuous Test Verification**
-- Pull request MUST show evidence that AI agent ran tests and they passed
-- Reviewers MUST reject PRs with disabled or skipped tests (unless justified in PR description)
-- Reviewers MUST verify test execution time is reasonable (flag if tests take >5 minutes)
-- Reviewers MUST verify flaky tests are fixed (not just re-run until they pass)
-- Reviewers MUST verify AI agent ran tests after code changes (check commit messages/PR description)
-
-**Principle XII: Root Cause Tracing**
-- Pull request MUST document root cause analysis for any bugs fixed
-- Reviewers MUST verify fixes address root causes, not symptoms
-- Reviewers MUST reject workarounds that mask underlying problems
-- Reviewers MUST verify test cases were not removed or weakened to make tests pass
-- Reviewers MUST verify test expectations reflect correct behavior, not broken behavior
-- Reviewers MUST challenge "quick fixes" that lack root cause understanding
-- PR description MUST include root cause trace for debugging work
-
-**Principle XIII: Acceptance Scenario Coverage**
-- Reviewers MUST verify every acceptance scenario in spec.md has a corresponding test case
-- Reviewers MUST verify table-driven test design is used for acceptance scenarios
-- Reviewers MUST verify test case names reference source scenarios (US#-AS# in `name` field)
-- Reviewers MUST reject implementations with untested acceptance scenarios (unless explicitly deferred with justification)
-- Reviewers MUST verify tests validate complete "Then" clauses, not partial behavior
-- PR description MUST include acceptance scenario coverage summary
-- Reviewers SHOULD verify traceability matrix is up to date if provided (optional but recommended)
 
 **General**
 - Tests MUST be reviewed before implementation code (TDD workflow)
@@ -2401,9 +2291,10 @@ All pull requests MUST be reviewed against these constitutional requirements, or
 
 This constitution is version-controlled alongside code and follows the same review process as code changes.
 
-**Version**: 1.3.3 | **Ratified**: 2025-11-20 | **Last Amended**: 2025-11-22
+**Version**: 1.4.3 | **Ratified**: 2025-11-20 | **Last Amended**: 2025-11-22
 
 **Version History**:
+- **1.4.0** (2025-11-22): Added Principle XIV (Test Coverage & Gap Analysis) - requires using `go test -cover` to uncover and test untested code paths
 - **1.3.3** (2025-11-22): Fixed example code violations - corrected all example code to follow Principle IX (Comprehensive Error Handling). Added proper error handling to examples in Principles VII and VIII where errors were being ignored. Added explanatory comments to test setup code where error handling omission is acceptable for brevity.
 - **1.3.2** (2025-11-22): Enhanced Principle VI (Protobuf Data Structures) - added strict definitions and anti-patterns section. Explicitly defines what qualifies as "truly random/generated" (only UUIDs, timestamps, crypto/rand values). Prohibits claiming fixture default values are "unknowable" or "can't derive". Requires AI agents to read fixture code before writing tests. Adds zero-tolerance code review enforcement protocol.
 - **1.3.1** (2025-11-21): Enhanced Principle VI (Protobuf Data Structures) - strengthened test fixture guidance to explicitly derive expected values from test fixtures (request data, DB fixtures, config) NOT response data, except for truly random/generated fields

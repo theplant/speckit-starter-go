@@ -24,11 +24,12 @@
 **Distributed Tracing**: OpenTracing (github.com/opentracing/opentracing-go) (MANDATORY per constitution)  
 **Protocol Buffers**: protoc compiler, protoc-gen-go for API contracts (MANDATORY per constitution)  
 **Testing**: Standard library `testing` with `httptest`, testcontainers-go for PostgreSQL (MANDATORY per constitution)  
+**Test Coverage**: `go test -cover` analysis required to identify and fill gaps (MANDATORY per constitution Principle X)  
 **Test Comparison**: google/go-cmp with protocmp for protobuf assertions (MANDATORY per constitution)  
 **Error Handling**: Standard library fmt.Errorf with %w for wrapping, errors.Is/As for checking (MANDATORY per constitution)  
 **Error Testing**: ALL sentinel errors and HTTP error codes MUST be tested (MANDATORY per constitution Principle IX)  
 **Context Propagation**: All service methods MUST accept context.Context as first parameter (MANDATORY per constitution)  
-**Service Architecture**: Services in public `services/` package (NOT internal/) for external reusability (MANDATORY per constitution Principle VIII)  
+**Service Architecture**: Services in public `services/` package (NOT internal/) for external reusability (MANDATORY per constitution Principle XI)  
 **Target Platform**: [e.g., Linux server, containerized deployment, Kubernetes or NEEDS CLARIFICATION]  
 **Project Type**: Backend API service (Go)  
 **Performance Goals**: [domain-specific, e.g., 1000 req/s, p99 < 200ms or NEEDS CLARIFICATION]  

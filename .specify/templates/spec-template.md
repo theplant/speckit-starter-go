@@ -19,7 +19,7 @@
   - Deployed independently
   - Demonstrated to users independently
   
-  CRITICAL - ACCEPTANCE SCENARIO COVERAGE (Constitution Principle XIII):
+  CRITICAL - ACCEPTANCE SCENARIO COVERAGE (Constitution Principle IX):
   Every acceptance scenario (Given/When/Then) MUST have a corresponding integration test.
   Use naming convention: US#-AS# (e.g., US1-AS1, US1-AS2, US2-AS1)
   This ensures one-to-one mapping between documented requirements and test validation.
@@ -130,7 +130,7 @@
 - ❌ **NEVER** use individual field comparisons (e.g., `if response.Name != expected.Name`)
 - ❌ **NEVER** use `==` or `reflect.DeepEqual` for protobuf messages
 - ✅ **ALWAYS** build expected from TEST FIXTURES (request data, database fixtures, config), NOT from response data
-- ✅ **ONLY** copy truly random fields from response: UUIDs, timestamps, crypto/rand values (Constitution v1.3.2)
+- ✅ **ONLY** copy truly random fields from response: UUIDs, timestamps, crypto/rand values (Constitution v1.4.3)
 - ❌ **NEVER** copy fixture defaults or configuration values from response claiming "can't derive"
 - ✅ **MUST** read `testutil/fixtures.go` to identify default values before writing assertions
 - Verify complete message comparison catches all field differences

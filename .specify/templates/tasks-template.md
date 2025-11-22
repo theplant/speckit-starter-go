@@ -8,7 +8,7 @@ description: "Task list template for feature implementation"
 **Input**: Design documents from `/specs/[###-feature-name]/`
 **Prerequisites**: plan.md (required), spec.md (required for user stories), research.md, data-model.md, contracts/
 
-**Tests**: Integration tests are MANDATORY per constitution. All tests use real PostgreSQL database via testcontainers-go (no mocking), follow table-driven patterns, use GORM for fixtures, use protobuf structs (NOT maps), verify OpenTracing instrumentation, and cover comprehensive edge cases. Tests are conducted at HTTP layer only (httptest), which exercises the full stack: HTTP → Service → Repository → Database. **Test assertions MUST derive expected values from fixtures** (request data, database fixtures, config), NOT from response data. Only truly random fields (UUIDs, timestamps, crypto/rand) may use response values (Constitution v1.3.2).
+**Tests**: Integration tests are MANDATORY per constitution. All tests use real PostgreSQL database via testcontainers-go (no mocking), follow table-driven patterns, use GORM for fixtures, use protobuf structs (NOT maps), verify OpenTracing instrumentation, and cover comprehensive edge cases. Tests are conducted at HTTP layer only (httptest), which exercises the full stack: HTTP → Service → Repository → Database. **Test assertions MUST derive expected values from fixtures** (request data, database fixtures, config), NOT from response data. Only truly random fields (UUIDs, timestamps, crypto/rand) may use response values (Constitution v1.4.3).
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
 
@@ -99,10 +99,10 @@ description: "Task list template for feature implementation"
 
 > **CRITICAL: Write these tests FIRST, ensure they FAIL before implementation**
 > **All tests MUST use real PostgreSQL (Docker), table-driven pattern, and cover edge cases**
-> **ACCEPTANCE SCENARIO COVERAGE (Principle XIII): Each acceptance scenario from spec.md MUST have a corresponding test**
+> **ACCEPTANCE SCENARIO COVERAGE (Principle IX): Each acceptance scenario from spec.md MUST have a corresponding test**
 
 - [ ] T022 [US1] HTTP integration test for [endpoint] in [package]/[handler]_test.go
-  - **Acceptance Scenario Tests (MANDATORY - table-driven design per Principle XIII)**:
+  - **Acceptance Scenario Tests (MANDATORY - table-driven design per Principle IX)**:
     - Test function: `TestFeature[UserStory]AcceptanceScenarios` (e.g., `TestEnrollmentAcceptanceScenarios`)
     - Use table-driven test with test case struct (Principle II - MANDATORY)
     - Test case `name` field: "US1-AS1: [Description]", "US1-AS2: [Description]", etc.
@@ -120,9 +120,9 @@ description: "Task list template for feature implementation"
   - Use protobuf structs (NOT maps) for request/response
   - Use `cmp.Diff()` with `protocmp.Transform()` for ALL protobuf message assertions (MANDATORY)
   - Do NOT use individual field comparisons for protobuf messages
-  - **Build expected from fixtures** (request data, DB fixtures, config), NOT response data (Principle VI v1.3.2)
+  - **Build expected from fixtures** (request data, DB fixtures, config), NOT response data (Principle VI v1.4.3)
   - **Read `testutil/fixtures.go`** before writing assertions to identify default values (MANDATORY)
-  - **Only use response values** for truly random fields: UUIDs, timestamps, crypto/rand (Constitution v1.3.2)
+  - **Only use response values** for truly random fields: UUIDs, timestamps, crypto/rand (Constitution v1.4.3)
   - Verify OpenTracing spans are created (NoopTracer default, mock tracer for span verification tests)
   - Verify context.Context is passed through all layers (HTTP → Service → Repository)
   - Verify errors are wrapped with contextual information using `fmt.Errorf("%w", err)`
@@ -162,14 +162,14 @@ description: "Task list template for feature implementation"
 
 ### Integration Tests for User Story 2 (MANDATORY) ⚠️
 
-> **ACCEPTANCE SCENARIO COVERAGE (Principle XIII): Each acceptance scenario from spec.md MUST have a corresponding test**
+> **ACCEPTANCE SCENARIO COVERAGE (Principle IX): Each acceptance scenario from spec.md MUST have a corresponding test**
 
 - [ ] T018 [US2] Integration test for [endpoint] in [package]/[handler]_test.go
-  - **Acceptance Scenario Tests (MANDATORY - table-driven design per Principle XIII)**:
+  - **Acceptance Scenario Tests (MANDATORY - table-driven design per Principle IX)**:
     - Test function: `TestFeature[UserStory]AcceptanceScenarios` (table-driven)
     - Test case `name` field: "US2-AS1: [Description]", "US2-AS2: [Description]"
     - Use `cmp.Diff()` with `protocmp.Transform()` for protobuf assertions (MANDATORY)
-    - Build expected from fixtures (request, DB, config), NOT response - Constitution v1.3.2
+    - Build expected from fixtures (request, DB, config), NOT response - Constitution v1.4.3
     - Read `testutil/fixtures.go` to identify default values before writing assertions
   - Table-driven tests with comprehensive edge cases per constitution
   
@@ -197,10 +197,10 @@ description: "Task list template for feature implementation"
 
 ### Integration Tests for User Story 3 (MANDATORY) ⚠️
 
-> **ACCEPTANCE SCENARIO COVERAGE (Principle XIII): Each acceptance scenario from spec.md MUST have a corresponding test**
+> **ACCEPTANCE SCENARIO COVERAGE (Principle IX): Each acceptance scenario from spec.md MUST have a corresponding test**
 
 - [ ] T024 [US3] Integration test for [endpoint] in [package]/[handler]_test.go
-  - **Acceptance Scenario Tests (MANDATORY - table-driven design per Principle XIII)**:
+  - **Acceptance Scenario Tests (MANDATORY - table-driven design per Principle IX)**:
     - Test function: `TestFeature[UserStory]AcceptanceScenarios` (table-driven)
     - Test case `name` field: "US3-AS1: [Description]", "US3-AS2: [Description]"
     - Use `cmp.Diff()` with `protocmp.Transform()` for protobuf assertions (MANDATORY)
@@ -315,7 +315,7 @@ description: "Task list template for feature implementation"
 
 **Note**: AI agents MUST run full test suite after ALL code changes per Principle XI (Continuous Test Verification)
 
-**Root Cause Tracing** (Principle XII): When encountering failures, trace backward to find original trigger and fix at source
+**Root Cause Tracing** (Principle VIII): When encountering failures, trace backward to find original trigger and fix at source
 
 - [ ] TXXX [P] Documentation updates in docs/
 - [ ] TXXX Code cleanup and refactoring (run tests after each change)
@@ -323,7 +323,9 @@ description: "Task list template for feature implementation"
 - [ ] TXXX Verify all integration tests pass with real database
 - [ ] TXXX Verify all error tests pass
 - [ ] TXXX Run tests with race detector to catch concurrency issues
-- [ ] TXXX Verify test coverage is adequate
+- [ ] TXXX Generate coverage report: `go test -coverprofile=coverage.out ./...`
+- [ ] TXXX Analyze coverage gaps and add tests per Principle X
+- [ ] TXXX Verify test coverage meets threshold (>80%)
 - [ ] TXXX Security hardening (run tests after security changes)
 - [ ] TXXX Run quickstart.md validation
 
@@ -429,7 +431,7 @@ With multiple developers:
 
 ---
 
-## Troubleshooting & Debugging (Principle XII: Root Cause Tracing)
+## Troubleshooting & Debugging (Principle VIII: Root Cause Tracing)
 
 When encountering problems during implementation, follow this methodology:
 

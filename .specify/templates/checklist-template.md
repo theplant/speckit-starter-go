@@ -43,7 +43,7 @@
 - [ ] CHK-ERR-007 Run error test suite: `go test -v -run "TestAll.*Errors"`
 - [ ] CHK-ERR-008 Confirm 100% error test coverage (no untested errors)
 
-## Continuous Test Verification *(MANDATORY per Constitution Principle XI)*
+## Continuous Test Verification *(MANDATORY per Constitution Principle VII)*
 
 **Note**: AI agents MUST run tests locally after ALL code changes
 
@@ -58,7 +58,7 @@
 - [ ] CHK-TEST-009 Verify test failures were reported and fixed
 - [ ] CHK-TEST-010 Verify task only marked complete after all tests passed
 
-## Root Cause Tracing *(MANDATORY per Constitution Principle XII)*
+## Root Cause Tracing *(MANDATORY per Constitution Principle VIII)*
 
 **Note**: AI agents MUST trace problems to source and fix there, NOT work around symptoms
 
