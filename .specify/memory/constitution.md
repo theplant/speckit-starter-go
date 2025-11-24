@@ -1,18 +1,12 @@
 <!--
 SYNC IMPACT REPORT
-Version: 1.4.2 → 1.4.3
+Version: 1.4.3 → 1.4.4
 Modified Principles:
-- Reordered all principles to flow sequentially by number (I-XIV)
-- Moved scattered principles to correct sections
-- Renumbered Operational Excellence principles (IX-X → XIII-XIV)
-- Removed all duplicate principle content
+- Enhanced Principle V (ServeHTTP Endpoint Testing) - consolidated multiple enhancements into comprehensive HTTP routing and testing requirements including root routes handler testing, identical routing configuration between production and tests, HTTP path patterns, and PathValue parameter extraction
+- Enhanced Principle VI (Protobuf Data Structures) - added strict definitions and anti-patterns section
 Added Sections: None
 Removed Sections: None
-Templates Requiring Updates:
-- ✅ .specify/templates/tasks-template.md (Updated principle references)
-- ✅ .specify/templates/plan-template.md (Updated principle references)  
-- ✅ .specify/templates/spec-template.md (Updated principle references)
-- ✅ .specify/templates/checklist-template.md (Updated principle references)
+Templates Requiring Updates: None
 Follow-up TODOs: None
 -->
 # Go Project Constitution Template
@@ -101,8 +95,13 @@ API endpoints MUST be tested via ServeHTTP interface:
 - Tests MUST verify response status codes, headers, and body content
 - JSON responses MUST be parsed and validated structurally
 - Tests MUST NOT bypass HTTP layer by calling service functions directly
+- **Tests MUST call the root routes handler ServeHTTP method** (NOT individual handler methods)
+- **URL routing and path handling MUST be tested** by calling the root HTTP mux
+- **Production API and tests MUST use identical routing configuration** from shared routes package
+- **HTTP path patterns MUST be used** (e.g., `"POST /api/v1/products/{productID}"`) for type-safe routing
+- **Path parameters MUST be extracted using `r.PathValue()`** (NOT string manipulation of `r.URL.Path`)
 
-**Rationale**: Testing through ServeHTTP ensures complete HTTP stack validation including routing, middleware, request parsing, content negotiation, error handling, and response formatting.
+**Rationale**: Testing through ServeHTTP ensures complete HTTP stack validation including routing, middleware, request parsing, content negotiation, error handling, and response formatting. Using identical routing configuration between production and tests prevents routing inconsistencies and ensures test accuracy. HTTP path patterns provide type-safe parameter extraction and eliminate routing bugs that bypass traditional testing. The `PathValue()` method ensures proper parameter extraction that matches the path pattern definitions, preventing parsing errors and maintaining consistency between routing and parameter handling.
 
 ### VI. Protobuf Data Structures
 
@@ -2291,9 +2290,10 @@ All pull requests MUST be reviewed against these constitutional requirements:
 
 This constitution is version-controlled alongside code and follows the same review process as code changes.
 
-**Version**: 1.4.3 | **Ratified**: 2025-11-20 | **Last Amended**: 2025-11-22
+**Version**: 1.4.4 | **Ratified**: 2025-11-20 | **Last Amended**: 2025-11-24
 
 **Version History**:
+- **1.4.4** (2025-11-24): Enhanced Principle V (ServeHTTP Endpoint Testing) - consolidated multiple enhancements into comprehensive HTTP routing and testing requirements including root routes handler testing, identical routing configuration between production and tests, HTTP path patterns, and PathValue parameter extraction; Enhanced Principle VI (Protobuf Data Structures) - added strict definitions and anti-patterns section
 - **1.4.0** (2025-11-22): Added Principle XIV (Test Coverage & Gap Analysis) - requires using `go test -cover` to uncover and test untested code paths
 - **1.3.3** (2025-11-22): Fixed example code violations - corrected all example code to follow Principle IX (Comprehensive Error Handling). Added proper error handling to examples in Principles VII and VIII where errors were being ignored. Added explanatory comments to test setup code where error handling omission is acceptable for brevity.
 - **1.3.2** (2025-11-22): Enhanced Principle VI (Protobuf Data Structures) - added strict definitions and anti-patterns section. Explicitly defines what qualifies as "truly random/generated" (only UUIDs, timestamps, crypto/rand values). Prohibits claiming fixture default values are "unknowable" or "can't derive". Requires AI agents to read fixture code before writing tests. Adds zero-tolerance code review enforcement protocol.
