@@ -94,7 +94,7 @@ A comprehensive set of principles for backend API development covering:
 
 ## Technology Stack
 
-- **Language**: Go 1.21+ (latest stable recommended)
+- **Language**: Go 1.25+ (latest stable recommended)
 - **Database**: PostgreSQL 15+ with JSONB support
 - **HTTP Framework**: Standard library `net/http` with `http.ServeMux`
 - **Database Access**: GORM (gorm.io/gorm)

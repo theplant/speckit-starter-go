@@ -8,9 +8,9 @@ description: "Task list template for feature implementation"
 **Input**: Design documents from `/specs/[###-feature-name]/`
 **Prerequisites**: plan.md (required), spec.md (required for user stories), research.md, data-model.md, contracts/
 
-**Tests**: Integration tests are MANDATORY per constitution. All tests use real PostgreSQL database via testcontainers-go (no mocking), follow table-driven patterns, use GORM for fixtures, use protobuf structs (NOT maps), verify OpenTracing instrumentation, and cover comprehensive edge cases. Tests are conducted at HTTP layer only (httptest), which exercises the full stack: HTTP → Service → Repository → Database. **Test assertions MUST derive expected values from fixtures** (request data, database fixtures, config), NOT from response data. Only truly random fields (UUIDs, timestamps, crypto/rand) may use response values (Constitution v1.4.3).
+**Testing Approach**: Per Go Project Constitution, this project follows **Test-First Development (TDD)**. Tests are MANDATORY and MUST be written BEFORE implementation. Each task phase includes protobuf definition → test writing → implementation workflow.
 
-**Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
+**Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story. Each user story follows the TDD cycle completely.
 
 ## Format: `[ID] [P?] [Story] Description`
 
@@ -18,17 +18,16 @@ description: "Task list template for feature implementation"
 - **[Story]**: Which user story this task belongs to (e.g., US1, US2, US3)
 - Include exact file paths in descriptions
 
-## Path Conventions
+## Go Project Structure
 
-- **Go project**: Root level for `main.go`, packages in subdirectories, `*_test.go` files alongside source
-- **Test organization**: Integration tests in `*_test.go` files (no separate `tests/` directory per Go convention)
-- **Test database**: Use testcontainers-go for automatic PostgreSQL container management
-- **Architecture**: Three-layer architecture (HTTP → Service → Repository)
-- **Service layer**: Business logic in Go interfaces with dependency injection
-- **Database access**: Use GORM for all database operations (models, queries, migrations)
-- **HTTP framework**: Use standard net/http with http.ServeMux (NO external routers, thin wrappers only)
-- **Tracing**: Use OpenTracing for all endpoint instrumentation
-- Paths shown below assume Go project structure - adjust based on plan.md
+All paths reference the Go project structure per plan.md:
+
+- **Protobuf**: `api/proto/v1/` (definitions), `api/gen/v1/` (generated)
+- **Services**: `services/` (PUBLIC package - business logic)
+- **Handlers**: `handlers/` (HTTP layer with integration tests)
+- **Models**: `internal/models/` (GORM models - internal only)
+- **Tests**: `handlers/*_test.go` (integration tests via ServeHTTP)
+- **Fixtures**: `testutil/` (test helpers and fixtures)
 
 <!-- 
   ============================================================================
@@ -51,19 +50,17 @@ description: "Task list template for feature implementation"
 
 ## Phase 1: Setup (Shared Infrastructure)
 
-**Purpose**: Project initialization and basic structure
+**Purpose**: Project initialization and basic structure per Constitution Technology Stack
 
-- [ ] T001 Initialize Go module with `go mod init`
-- [ ] T002 [P] Install GORM dependencies: `go get -u gorm.io/gorm gorm.io/driver/postgres`
-- [ ] T003 [P] Install OpenTracing dependency: `go get -u github.com/opentracing/opentracing-go`
-- [ ] T004 [P] Install Protocol Buffers dependencies: `go get -u google.golang.org/protobuf/testing/protocmp`
-- [ ] T005 [P] Install testcontainers-go: `go get -u github.com/testcontainers/testcontainers-go github.com/testcontainers/testcontainers-go/modules/postgres`
-- [ ] T006 [P] Setup GORM connection and database configuration
-- [ ] T007 [P] Configure environment variables for database URLs
-- [ ] T008 [P] Setup GORM AutoMigrate for database migrations
-- [ ] T009 [P] Configure OpenTracing global tracer (NoopTracer for tests, Jaeger/Zipkin for production)
-- [ ] T010 [P] Create type-safe error definitions singleton struct (error codes, messages, HTTP status)
-- [ ] T011 [P] Configure linting (golangci-lint) and formatting (gofmt, goimports)
+- [ ] T001 Initialize Go module with Go 1.25+
+- [ ] T002 [P] Setup `api/proto/v1/` directory for protobuf definitions
+- [ ] T003 [P] Setup `api/gen/v1/` directory for generated code
+- [ ] T004 [P] Configure `protoc` with `protoc-gen-go`, `protoc-gen-go-grpc`, `protoc-gen-validate`
+- [ ] T005 [P] Setup `services/` (public package for business logic)
+- [ ] T006 [P] Setup `handlers/` (HTTP handlers)
+- [ ] T007 [P] Setup `internal/models/` (GORM models)
+- [ ] T008 [P] Setup `testutil/` (test helpers and fixtures)
+- [ ] T009 [P] Setup `cmd/api/` (main application entry point)
 
 ---
 
@@ -73,17 +70,19 @@ description: "Task list template for feature implementation"
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T012 Create initial GORM models for core tables
-- [ ] T013 Create initial database migrations using GORM AutoMigrate
-- [ ] T014 [P] Setup HTTP router using standard net/http with http.ServeMux
-- [ ] T015 [P] Implement OpenTracing middleware to instrument all HTTP endpoints
-- [ ] T016 [P] Implement middleware: logging, recovery, CORS
-- [ ] T017 [P] Create GORM database connection pool and health check
-- [ ] T018 [P] Setup testcontainers test database helper (automatic container lifecycle, database truncation for test isolation)
-- [ ] T019 Implement base error response types and JSON marshaling (use singleton error struct)
-- [ ] T020 [P] Create fixture helper utilities for test database population using GORM
-- [ ] T021 [P] Create table truncation helper function (truncate tables in reverse dependency order with CASCADE)
-- [ ] T022 [P] Verify OpenTracing spans are created for test requests
+**Constitution Requirements**:
+
+- [ ] T010 Setup testcontainers-go with PostgreSQL module in `testutil/db.go`
+- [ ] T011 Create `truncateTables()` helper function in `testutil/db.go`
+- [ ] T012 Create `setupTestDB()` function with GORM AutoMigrate in `testutil/db.go`
+- [ ] T013 [P] Setup error handling: sentinel errors in `services/errors.go`
+- [ ] T014 [P] Setup error handling: HTTP error code singleton in `handlers/error_codes.go`
+- [ ] T015 [P] Create `HandleServiceError()` with automatic error mapping in `handlers/error_codes.go`
+- [ ] T016 [P] Setup OpenTracing with NoopTracer for development
+- [ ] T017 [P] Setup HTTP routing structure in `handlers/routes.go` using `http.ServeMux`
+- [ ] T018 [P] Setup middleware: logging in `internal/middleware/logging.go`
+- [ ] T019 [P] Setup middleware: tracing in `internal/middleware/tracing.go`
+- [ ] T020 Create `services/migrations.go` with `AutoMigrate()` function (REQUIRED for external apps)
 
 **Checkpoint**: Foundation ready - user story implementation can now begin in parallel
 
@@ -95,62 +94,77 @@ description: "Task list template for feature implementation"
 
 **Independent Test**: [How to verify this story works on its own]
 
-### Integration Tests for User Story 1 (MANDATORY) ⚠️
+**Acceptance Scenarios** (from spec.md):
+- US1-AS1: [Scenario description]
+- US1-AS2: [Scenario description]
 
-> **CRITICAL: Write these tests FIRST, ensure they FAIL before implementation**
-> **All tests MUST use real PostgreSQL (Docker), table-driven pattern, and cover edge cases**
-> **ACCEPTANCE SCENARIO COVERAGE (Principle IX): Each acceptance scenario from spec.md MUST have a corresponding test**
+### Step 1: Protobuf Definitions (TDD Phase - Design) 📝
 
-- [ ] T022 [US1] HTTP integration test for [endpoint] in [package]/[handler]_test.go
-  - **Acceptance Scenario Tests (MANDATORY - table-driven design per Principle IX)**:
-    - Test function: `TestFeature[UserStory]AcceptanceScenarios` (e.g., `TestEnrollmentAcceptanceScenarios`)
-    - Use table-driven test with test case struct (Principle II - MANDATORY)
-    - Test case `name` field: "US1-AS1: [Description]", "US1-AS2: [Description]", etc.
-    - Test case `scenario` field (optional): "Given..., When..., Then..." for documentation
-    - Each test case represents one acceptance scenario from spec.md
-    - Each test case MUST validate complete "Given/When/Then" clause from spec
-    - Use `cmp.Diff()` with `protocmp.Transform()` for ALL protobuf assertions (Principle VI - MANDATORY)
-  - Happy path test cases (from acceptance scenarios)
-  - Edge cases: input validation, boundary conditions, auth errors
-  - Edge cases: data state (404, conflicts), database errors, HTTP specifics
-  - Use httptest.ResponseRecorder and real testcontainers PostgreSQL database fixtures
-  - Tests exercise full stack: HTTP → Service → Repository → Database
-  - Use GORM for fixture data setup
-  - Use database truncation for cleanup (defer truncateTables pattern)
-  - Use protobuf structs (NOT maps) for request/response
-  - Use `cmp.Diff()` with `protocmp.Transform()` for ALL protobuf message assertions (MANDATORY)
-  - Do NOT use individual field comparisons for protobuf messages
-  - **Build expected from fixtures** (request data, DB fixtures, config), NOT response data (Principle VI v1.4.3)
-  - **Read `testutil/fixtures.go`** before writing assertions to identify default values (MANDATORY)
-  - **Only use response values** for truly random fields: UUIDs, timestamps, crypto/rand (Constitution v1.4.3)
-  - Verify OpenTracing spans are created (NoopTracer default, mock tracer for span verification tests)
-  - Verify context.Context is passed through all layers (HTTP → Service → Repository)
-  - Verify errors are wrapped with contextual information using `fmt.Errorf("%w", err)`
-  - Verify error checking uses `errors.Is()` and `errors.As()` (NOT string comparison)
-  - Table-driven test structure with test case structs
-  
-- [ ] T023 [US1] Create acceptance scenario traceability matrix (optional but recommended)
-  - Document mapping: US1-AS1 → test case "US1-AS1: [Description]" in TestFeature[UserStory]AcceptanceScenarios
-  - Verify all scenarios from spec.md are covered
-  - Flag any deferred scenarios with justification
-  - Note: Traceability can also be verified by reviewing test case `name` fields in table-driven test
+> **CRITICAL**: Define API contracts BEFORE writing tests or code
 
-### Implementation for User Story 1
+- [ ] T030 [P] [US1] Define request message in `api/proto/v1/[entity]_service.proto`
+- [ ] T031 [P] [US1] Define response message in `api/proto/v1/[entity]_service.proto`
+- [ ] T032 [P] [US1] Add protobuf validation rules using `protoc-gen-validate`
+- [ ] T033 [US1] Run `protoc` to generate Go code in `api/gen/v1/`
+- [ ] T034 [US1] Commit generated protobuf code
 
-- [ ] T023 [P] [US1] Create [Entity1] GORM model in [package]/[entity1].go
-- [ ] T024 [P] [US1] Create [Entity2] GORM model in [package]/[entity2].go
-- [ ] T025 [US1] Implement GORM database repository in [package]/[repository].go (depends on T023, T024)
-- [ ] T026 [P] [US1] Define service interface in [package]/service.go with business logic methods (all methods MUST accept context.Context as first parameter)
-- [ ] T027 [US1] Implement service with dependency injection (db, logger, cache) in [package]/service_impl.go
-- [ ] T028 [US1] Implement business logic in service methods (validation, transactions, error wrapping with fmt.Errorf %w verb)
-- [ ] T029 [US1] Implement ServeHTTP handler as thin wrapper in [package]/handler.go (delegates to service)
-- [ ] T030 [US1] Add OpenTracing span creation in handler (extract/start span, set tags)
-- [ ] T031 [US1] Add child spans for service calls (instrument business logic)
-- [ ] T032 [US1] Add HTTP request parsing and response formatting in handler
-- [ ] T033 [US1] Create fixture helpers using GORM in [package]/fixtures_test.go
-- [ ] T034 [US1] Create service constructor with dependency injection
+### Step 2: Integration Tests (TDD Phase - Red) 🔴
 
-**Checkpoint**: At this point, User Story 1 should be fully functional and testable independently
+> **CRITICAL**: Write tests FIRST, verify they FAIL before implementation
+
+- [ ] T035 [P] [US1] Create test fixtures in `testutil/fixtures.go` (e.g., `CreateTest[Entity]()`)
+- [ ] T036 [US1] Write table-driven test for **US1-AS1** in `handlers/[entity]_handler_test.go`
+- [ ] T037 [US1] Write table-driven test for **US1-AS2** in `handlers/[entity]_handler_test.go`
+- [ ] T038 [US1] Add edge case tests: **Input validation** (empty strings, nil, SQL injection, XSS)
+- [ ] T039 [US1] Add edge case tests: **Boundary conditions** (zero, negative, max values)
+- [ ] T040 [US1] Add edge case tests: **Data state** (404, conflicts, duplicates)
+- [ ] T041 [US1] Add edge case tests: **Database errors** (constraints, foreign keys)
+- [ ] T042 [US1] Add edge case tests: **HTTP specifics** (wrong methods, headers, malformed JSON)
+- [ ] T043 [US1] **RUN TESTS** - Verify all tests FAIL (red phase) ❌
+- [ ] T044 [US1] Review test design with team/lead before implementation
+
+### Step 3: Implementation (TDD Phase - Green) 🟢
+
+> **CRITICAL**: Write minimal code to make tests pass
+
+- [ ] T045 [P] [US1] Create GORM model in `internal/models/[entity].go`
+- [ ] T046 [P] [US1] Add sentinel errors to `services/errors.go` (e.g., `ErrEntityNotFound`)
+- [ ] T047 [P] [US1] Add HTTP error codes to `handlers/error_codes.go` with `ServiceErr` mapping
+- [ ] T048 [US1] Implement service interface in `services/[entity]_service.go` (returns protobuf types)
+- [ ] T049 [US1] Implement service constructor with dependency injection
+- [ ] T050 [US1] Implement service methods (e.g., `Create()`, `Get()`, `List()`) with context
+- [ ] T051 [US1] Wrap errors with `fmt.Errorf("operation: %w", err)` in service
+- [ ] T052 [US1] Add OpenTracing spans to service methods
+- [ ] T053 [US1] Create HTTP handler in `handlers/[entity]_handler.go` (thin wrapper)
+- [ ] T054 [US1] Add HTTP path patterns to `handlers/routes.go` (e.g., `"POST /api/v1/[entity]"`)
+- [ ] T055 [US1] Extract path parameters using `r.PathValue()` in handlers
+- [ ] T056 [US1] Add OpenTracing spans to HTTP handlers
+- [ ] T057 [US1] Update `services/migrations.go` AutoMigrate() with new model
+- [ ] T058 [US1] **RUN TESTS** - Execute full test suite ✅
+- [ ] T059 [US1] **VERIFY** - Confirm all tests pass (green phase) ✅
+
+### Step 4: Refactor (TDD Phase - Refactor) ♻️
+
+> **CRITICAL**: Improve code quality while keeping tests green
+
+- [ ] T060 [US1] Refactor: Extract common logic to helper functions
+- [ ] T061 [US1] Refactor: Improve error messages and context
+- [ ] T062 [US1] Refactor: Add code comments explaining WHY (not WHAT)
+- [ ] T063 [US1] **RUN TESTS** - After each refactoring change ✅
+- [ ] T064 [US1] **RUN WITH RACE DETECTOR** - `go test -race ./...` ✅
+
+### Step 5: Coverage & Verification ✅
+
+> **CRITICAL**: Ensure comprehensive test coverage
+
+- [ ] T065 [US1] Run `go test -cover ./handlers` - verify >80% coverage
+- [ ] T066 [US1] Analyze uncovered paths - add missing tests or remove dead code
+- [ ] T067 [US1] Verify ALL sentinel errors have test cases
+- [ ] T068 [US1] Verify ALL HTTP error codes have test cases
+- [ ] T069 [US1] Verify ALL acceptance scenarios (US1-AS1, US1-AS2) tested
+- [ ] T070 [US1] Verify ALL edge case categories covered in tests
+
+**Checkpoint**: User Story 1 fully functional, all tests pass, >80% coverage
 
 ---
 
@@ -160,32 +174,32 @@ description: "Task list template for feature implementation"
 
 **Independent Test**: [How to verify this story works on its own]
 
-### Integration Tests for User Story 2 (MANDATORY) ⚠️
+**Acceptance Scenarios** (from spec.md):
+- US2-AS1: [Scenario description]
+- US2-AS2: [Scenario description]
 
-> **ACCEPTANCE SCENARIO COVERAGE (Principle IX): Each acceptance scenario from spec.md MUST have a corresponding test**
+### Follow TDD Cycle (Same as User Story 1)
 
-- [ ] T018 [US2] Integration test for [endpoint] in [package]/[handler]_test.go
-  - **Acceptance Scenario Tests (MANDATORY - table-driven design per Principle IX)**:
-    - Test function: `TestFeature[UserStory]AcceptanceScenarios` (table-driven)
-    - Test case `name` field: "US2-AS1: [Description]", "US2-AS2: [Description]"
-    - Use `cmp.Diff()` with `protocmp.Transform()` for protobuf assertions (MANDATORY)
-    - Build expected from fixtures (request, DB, config), NOT response - Constitution v1.4.3
-    - Read `testutil/fixtures.go` to identify default values before writing assertions
-  - Table-driven tests with comprehensive edge cases per constitution
-  
-- [ ] T019 [US2] Create acceptance scenario traceability matrix (optional but recommended)
-  - Document mapping: US2-AS# → test case name in TestFeature[UserStory]AcceptanceScenarios
-  - Verify all scenarios from spec.md are covered
+> **Pattern**: Protobuf → Tests (Red) → Implementation (Green) → Refactor → Verify
 
-### Implementation for User Story 2
+- [ ] T080 [US2] **Step 1**: Define protobuf messages in `api/proto/v1/`
+- [ ] T081 [US2] **Step 1**: Generate Go code with `protoc`
+- [ ] T082 [US2] **Step 2**: Create test fixtures in `testutil/fixtures.go`
+- [ ] T083 [US2] **Step 2**: Write integration tests for US2-AS1, US2-AS2 in `handlers/[entity]_handler_test.go`
+- [ ] T084 [US2] **Step 2**: Write ALL edge case tests (6 categories)
+- [ ] T085 [US2] **Step 2**: RUN TESTS - Verify FAIL (red) ❌
+- [ ] T086 [US2] **Step 3**: Create GORM model in `internal/models/`
+- [ ] T087 [US2] **Step 3**: Add sentinel errors and HTTP error codes
+- [ ] T088 [US2] **Step 3**: Implement service in `services/` (returns protobuf)
+- [ ] T089 [US2] **Step 3**: Implement handler in `handlers/` (thin wrapper)
+- [ ] T090 [US2] **Step 3**: Update routes in `handlers/routes.go`
+- [ ] T091 [US2] **Step 3**: Update `services/migrations.go`
+- [ ] T092 [US2] **Step 3**: RUN TESTS - Verify PASS (green) ✅
+- [ ] T093 [US2] **Step 4**: Refactor and run tests after each change ✅
+- [ ] T094 [US2] **Step 5**: Run coverage analysis and verify >80%
+- [ ] T095 [US2] **Step 5**: Verify ALL scenarios and edge cases tested
 
-- [ ] T019 [P] [US2] Create [Entity] model/struct in [package]/[entity].go
-- [ ] T020 [US2] Implement database operations in [package]/[repository].go
-- [ ] T021 [US2] Implement ServeHTTP handler in [package]/[handler].go
-- [ ] T022 [US2] Integrate with User Story 1 components (if needed)
-- [ ] T023 [US2] Create fixture helpers for test data
-
-**Checkpoint**: At this point, User Stories 1 AND 2 should both work independently
+**Checkpoint**: User Stories 1 AND 2 both work independently, all tests pass
 
 ---
 
@@ -195,29 +209,25 @@ description: "Task list template for feature implementation"
 
 **Independent Test**: [How to verify this story works on its own]
 
-### Integration Tests for User Story 3 (MANDATORY) ⚠️
+**Acceptance Scenarios** (from spec.md):
+- US3-AS1: [Scenario description]
+- US3-AS2: [Scenario description]
 
-> **ACCEPTANCE SCENARIO COVERAGE (Principle IX): Each acceptance scenario from spec.md MUST have a corresponding test**
+### Follow TDD Cycle (Same Pattern)
 
-- [ ] T024 [US3] Integration test for [endpoint] in [package]/[handler]_test.go
-  - **Acceptance Scenario Tests (MANDATORY - table-driven design per Principle IX)**:
-    - Test function: `TestFeature[UserStory]AcceptanceScenarios` (table-driven)
-    - Test case `name` field: "US3-AS1: [Description]", "US3-AS2: [Description]"
-    - Use `cmp.Diff()` with `protocmp.Transform()` for protobuf assertions (MANDATORY)
-  - Table-driven tests with comprehensive edge cases per constitution
-  
-- [ ] T025 [US3] Create acceptance scenario traceability matrix (optional but recommended)
-  - Document mapping: US3-AS# → test case name in TestFeature[UserStory]AcceptanceScenarios
-  - Verify all scenarios from spec.md are covered
+> **Pattern**: Protobuf → Tests (Red) → Implementation (Green) → Refactor → Verify
 
-### Implementation for User Story 3
+- [ ] T100 [US3] **Step 1**: Define protobuf messages and generate code
+- [ ] T101 [US3] **Step 2**: Create fixtures and write integration tests (US3-AS1, US3-AS2)
+- [ ] T102 [US3] **Step 2**: Write ALL edge case tests (6 categories)
+- [ ] T103 [US3] **Step 2**: RUN TESTS - Verify FAIL (red) ❌
+- [ ] T104 [US3] **Step 3**: Implement model, service, handler
+- [ ] T105 [US3] **Step 3**: Add errors, routes, migrations
+- [ ] T106 [US3] **Step 3**: RUN TESTS - Verify PASS (green) ✅
+- [ ] T107 [US3] **Step 4**: Refactor with continuous testing ✅
+- [ ] T108 [US3] **Step 5**: Coverage analysis and verification
 
-- [ ] T025 [P] [US3] Create [Entity] model/struct in [package]/[entity].go
-- [ ] T026 [US3] Implement database operations in [package]/[repository].go
-- [ ] T027 [US3] Implement ServeHTTP handler in [package]/[handler].go
-- [ ] T028 [US3] Create fixture helpers for test data
-
-**Checkpoint**: All user stories should now be independently functional
+**Checkpoint**: All user stories (1, 2, 3) independently functional, all tests pass
 
 ---
 
@@ -225,116 +235,27 @@ description: "Task list template for feature implementation"
 
 ---
 
-## Phase N-2: Acceptance Scenario Validation (MANDATORY - Before Feature Complete)
-
-**Purpose**: Verify ALL acceptance scenarios from spec.md have corresponding tests per Constitution Principle XIII
-
-**⚠️ CRITICAL**: Feature is NOT complete until all acceptance scenarios are tested. Untested scenarios = untested requirements.
-
-### Acceptance Scenario Validation Tasks (MANDATORY)
-
-- [ ] TXXX Generate acceptance scenario traceability matrix (optional but recommended)
-  - List all acceptance scenarios from spec.md (US#-AS# format)
-  - Map each scenario to test case name in table-driven tests
-  - Example format:
-    ```
-    | Scenario | Description | Test Function & Case Name | Status |
-    |----------|-------------|---------------------------|--------|
-    | US1-AS1  | New customer enrolls | TestEnrollmentAcceptanceScenarios → "US1-AS1: New customer enrolls" | ✅ Tested |
-    | US1-AS2  | First purchase enrollment | TestEnrollmentAcceptanceScenarios → "US1-AS2: First purchase enrollment" | ❌ NOT TESTED |
-    ```
-
-- [ ] TXXX Validate acceptance scenario coverage
-  - Verify every scenario in spec.md has a test case in table-driven tests
-  - Run tests: `go test -v -run "Test.*AcceptanceScenarios" ./...`
-  - Review test output to see test case names (should show "US#-AS#: ..." format)
-  - Confirm all tests pass
-  - Document any deferred scenarios with justification
-
-- [ ] TXXX Review test structure and assertions
-  - Verify table-driven test design used (Principle II - MANDATORY)
-  - Verify test case `name` field includes scenario ID: "US#-AS#: [Description]"
-  - Verify `cmp.Diff()` with `protocmp.Transform()` used for protobuf assertions (Principle VI - MANDATORY)
-  - Verify tests validate complete "Given/When/Then" clauses
-
-**Checkpoint**: All acceptance scenarios tested - requirements validated
-
----
-
-## Phase N-1: Comprehensive Error Testing (MANDATORY - Before Feature Complete)
-
-**Purpose**: Test ALL defined errors per Constitution Principle IX
-
-**⚠️ CRITICAL**: Feature is NOT complete until all errors are tested. Untested error paths are production bugs.
-
-### Error Testing Tasks (MANDATORY)
-
-- [ ] TXXX Create comprehensive error testing file: `tests/integration/error_handling_test.go`
-
-- [ ] TXXX Implement `TestAllSentinelErrors` function
-  - Test EVERY error defined in `services/errors.go`
-  - Verify error wrapping with `fmt.Errorf("%w", err)`
-  - Verify error checking with `errors.Is()`
-  - Use table-driven test structure
-  - Each error must have at least one test case
-  - Use real database fixtures to trigger errors
-  - Example: ErrProductNotFound, ErrDuplicateSKU, ErrMissingRequired, etc.
-
-- [ ] TXXX Implement `TestAllHTTPErrorCodes` function
-  - Test EVERY error code defined in `handlers/error_codes.go`
-  - Verify HTTP status codes (400, 404, 409, 500, etc.)
-  - Verify error response JSON structure
-  - Verify ErrorCode.ServiceErr mapping
-  - Use httptest.ResponseRecorder for HTTP testing
-  - Example: PRODUCT_NOT_FOUND, DUPLICATE_SKU, MISSING_REQUIRED, etc.
-
-- [ ] TXXX Implement `TestErrorFlowEndToEnd` function
-  - Verify complete error flow: Service → Handler → Client
-  - Test context errors (cancellation → 499, timeout → 504)
-  - Validate error message propagation
-  - Verify automatic error mapping via HandleServiceError()
-
-- [ ] TXXX Run comprehensive error test suite
-  - Execute: `go test -v -run "TestAll.*Errors|TestErrorFlow" ./tests/integration/`
-  - Verify every sentinel error has a passing test
-  - Verify every HTTP error code has a passing test
-  - Confirm zero untested error paths remain
-
-- [ ] TXXX Document error testing approach
-  - Create ERROR_TESTING_REPORT.md with coverage matrix
-  - List all tested errors with test case names
-  - Document any intentionally untested errors (with justification)
-
-**Checkpoint**: All errors tested - ready for code review
-
----
-
 ## Phase N: Polish & Cross-Cutting Concerns
 
 **Purpose**: Improvements that affect multiple user stories
 
-**Note**: AI agents MUST run full test suite after ALL code changes per Principle XI (Continuous Test Verification)
-
-**Root Cause Tracing** (Principle VIII): When encountering failures, trace backward to find original trigger and fix at source
-
-- [ ] TXXX [P] Documentation updates in docs/
-- [ ] TXXX Code cleanup and refactoring (run tests after each change)
-- [ ] TXXX Performance optimization across all stories (run tests after each change)
-- [ ] TXXX Verify all integration tests pass with real database
-- [ ] TXXX Verify all error tests pass
-- [ ] TXXX Run tests with race detector to catch concurrency issues
-- [ ] TXXX Generate coverage report: `go test -coverprofile=coverage.out ./...`
-- [ ] TXXX Analyze coverage gaps and add tests per Principle X
-- [ ] TXXX Verify test coverage meets threshold (>80%)
-- [ ] TXXX Security hardening (run tests after security changes)
-- [ ] TXXX Run quickstart.md validation
-
-**Debugging Discipline** (if issues encountered during any phase):
-- [ ] TXXX Document root cause analysis for any bugs fixed
-- [ ] TXXX Verify fixes address root causes, not symptoms
-- [ ] TXXX Ensure no test cases removed or weakened to make tests pass
-- [ ] TXXX Verify test expectations reflect correct behavior
-- [ ] TXXX Document tracing process (symptom → source → fix)
+- [ ] T200 [P] Run `go test -cover ./...` across all packages - verify >80% coverage
+- [ ] T201 [P] Run `go test -race ./...` - verify no race conditions
+- [ ] T202 [P] Run `go vet ./...` - verify no issues
+- [ ] T203 [P] Run linter (e.g., golangci-lint) - fix all issues
+- [ ] T204 [P] Review all sentinel errors have test cases
+- [ ] T205 [P] Review all HTTP error codes have test cases
+- [ ] T206 [P] Review all acceptance scenarios (US#-AS#) tested
+- [ ] T207 Code cleanup: Remove temporary files and helper scripts
+- [ ] T208 Code cleanup: Ensure comments explain WHY (not WHAT)
+- [ ] T209 Verify services in public `services/` package (NOT internal)
+- [ ] T210 Verify services return protobuf types (NOT models)
+- [ ] T211 Verify `AutoMigrate()` exported in `services/migrations.go`
+- [ ] T212 Performance: Add database indexes if needed
+- [ ] T213 Security: Review for SQL injection prevention (handled by GORM)
+- [ ] T214 Security: Review for XSS prevention
+- [ ] T215 Run quickstart.md validation
+- [ ] T216 Update README with setup instructions
 
 ---
 
@@ -355,13 +276,24 @@ description: "Task list template for feature implementation"
 - **User Story 2 (P2)**: Can start after Foundational (Phase 2) - May integrate with US1 but should be independently testable
 - **User Story 3 (P3)**: Can start after Foundational (Phase 2) - May integrate with US1/US2 but should be independently testable
 
-### Within Each User Story
+### Within Each User Story (TDD Cycle)
 
-- Tests (if included) MUST be written and FAIL before implementation
+**CRITICAL - Constitution Principle VII**: Tests MUST be written BEFORE implementation
+
+1. **Design Phase**: Define protobuf messages → Generate Go code
+2. **Red Phase**: Write integration tests → Verify they FAIL ❌
+3. **Green Phase**: Implement code to make tests pass ✅
+4. **Refactor Phase**: Improve code → Run tests after each change ✅
+5. **Verify Phase**: Coverage analysis → Verify completeness
+
+**Execution Order**:
+- Protobuf definitions before tests
+- Tests before models
 - Models before services
-- Services before endpoints
-- Core implementation before integration
-- Story complete before moving to next priority
+- Services before handlers
+- Handlers before routes
+- Run tests after EVERY code change
+- Story complete ONLY when all tests pass
 
 ### Parallel Opportunities
 
@@ -374,175 +306,123 @@ description: "Task list template for feature implementation"
 
 ---
 
-## Parallel Example: User Story 1
+## Parallel Example: User Story 1 (TDD Cycle)
 
 ```bash
-# Launch all tests for User Story 1 together (if tests requested):
-Task: "Contract test for [endpoint] in tests/contract/test_[name].py"
-Task: "Integration test for [user journey] in tests/integration/test_[name].py"
+# Step 1: Protobuf definitions (can be parallel if different message files)
+Task T030: "Define request message in api/proto/v1/product_service.proto"
+Task T031: "Define response message in api/proto/v1/product_service.proto"
+# Then run: protoc --go_out=api/gen --go-grpc_out=api/gen api/proto/v1/*.proto
 
-# Launch all models for User Story 1 together:
-Task: "Create [Entity1] model in src/models/[entity1].py"
-Task: "Create [Entity2] model in src/models/[entity2].py"
+# Step 2: Write ALL tests first (can be parallel - different test functions)
+Task T036: "Write test for US1-AS1 in handlers/product_handler_test.go"
+Task T037: "Write test for US1-AS2 in handlers/product_handler_test.go"
+Task T038: "Write edge case tests: input validation"
+Task T039: "Write edge case tests: boundary conditions"
+# Then run: go test ./handlers -v (should FAIL - red phase)
+
+# Step 3: Implementation (sequential dependencies)
+Task T045: "Create GORM model in internal/models/product.go"
+Task T046: "Add sentinel errors to services/errors.go"
+Task T048: "Implement service in services/product_service.go" (depends on model)
+Task T053: "Implement handler in handlers/product_handler.go" (depends on service)
+# Then run: go test ./handlers -v (should PASS - green phase)
+
+# Step 4: Refactor (run tests after EACH change)
+# Run: go test ./handlers -v (after each refactoring)
 ```
 
 ---
 
 ## Implementation Strategy
 
-### MVP First (User Story 1 Only)
+### MVP First (User Story 1 Only) - TDD Approach
 
-1. Complete Phase 1: Setup
-2. Complete Phase 2: Foundational (CRITICAL - blocks all stories)
+1. Complete Phase 1: Setup (Go project initialization)
+2. Complete Phase 2: Foundational (testcontainers, errors, routing) - BLOCKS all stories
 3. Complete Phase 3: User Story 1
-4. **STOP and VALIDATE**: Test User Story 1 independently
+   - Define protobuf → Generate code
+   - Write tests (US1-AS1, US1-AS2 + edge cases) → Verify FAIL ❌
+   - Implement (models, service, handler) → Run tests → Verify PASS ✅
+   - Refactor → Run tests after each change ✅
+   - Coverage analysis → Verify >80%
+4. **STOP and VALIDATE**: All User Story 1 tests pass independently
 5. Deploy/demo if ready
 
-### Incremental Delivery
+### Incremental Delivery (TDD Each Story)
 
-1. Complete Setup + Foundational → Foundation ready
-2. Add User Story 1 → Test independently → Deploy/Demo (MVP!)
-3. Add User Story 2 → Test independently → Deploy/Demo
-4. Add User Story 3 → Test independently → Deploy/Demo
-5. Each story adds value without breaking previous stories
+1. Setup + Foundational → Foundation ready (testcontainers working)
+2. User Story 1 (TDD Cycle):
+   - Protobuf → Tests (red) → Implementation (green) → Refactor → Verify
+   - **CHECKPOINT**: All tests pass, >80% coverage → Deploy/Demo (MVP!)
+3. User Story 2 (TDD Cycle):
+   - Protobuf → Tests (red) → Implementation (green) → Refactor → Verify
+   - **CHECKPOINT**: All tests pass, US1 still works → Deploy/Demo
+4. User Story 3 (TDD Cycle):
+   - Protobuf → Tests (red) → Implementation (green) → Refactor → Verify
+   - **CHECKPOINT**: All tests pass, US1 & US2 still work → Deploy/Demo
+5. Each story adds value without breaking previous stories (verified by tests)
 
-### Parallel Team Strategy
+### Parallel Team Strategy (TDD Coordination)
 
 With multiple developers:
 
-1. Team completes Setup + Foundational together
-2. Once Foundational is done:
-   - Developer A: User Story 1
-   - Developer B: User Story 2
-   - Developer C: User Story 3
-3. Stories complete and integrate independently
+1. **Team completes Setup + Foundational together** (MUST be complete first)
+2. **Once Foundational is done**, each developer follows TDD cycle:
+   - Developer A: User Story 1 (Protobuf → Tests → Implement → Verify)
+   - Developer B: User Story 2 (Protobuf → Tests → Implement → Verify)
+   - Developer C: User Story 3 (Protobuf → Tests → Implement → Verify)
+3. **Coordination Points**:
+   - Share protobuf definitions in `api/proto/v1/` (merge conflicts possible)
+   - Share test fixtures in `testutil/fixtures.go` (coordinate)
+   - Independent handlers in `handlers/` (no conflicts)
+   - Run full test suite before merging each story
+4. Stories complete independently, all tests pass before integration
 
 ---
 
 ## Notes
 
-- [P] tasks = different files, no dependencies
-- [Story] label maps task to specific user story for traceability
+**Task Conventions**:
+- [P] tasks = different files, no dependencies, can run in parallel
+- [Story] label (US1, US2, US3) maps task to specific user story for traceability
+- Task IDs are sequential for easy reference in code reviews
+
+**TDD Requirements (Constitution Principle VII)**:
+- Tests MUST be written BEFORE implementation (mandatory, not optional)
+- Tests MUST use protobuf structs (NOT `map[string]interface{}`)
+- Tests MUST use table-driven design with `name` field
+- Tests MUST reference acceptance scenarios (US1-AS1, US1-AS2, etc.)
+- Tests MUST cover ALL edge case categories (6 categories, non-negotiable)
+- Tests MUST use `cmp.Diff()` with `protocmp.Transform()` for protobuf assertions
+- Tests MUST derive expected values from fixtures (NOT response data)
+- Tests MUST be run after EVERY code change
+- Task is complete ONLY when all tests pass
+
+**Story Independence**:
 - Each user story should be independently completable and testable
-- Verify tests fail before implementing
-- Commit after each task or logical group
+- Each story has its own protobuf messages, models, services, handlers
+- Stories can share foundation (testcontainers, errors, routing)
 - Stop at any checkpoint to validate story independently
-- Avoid: vague tasks, same file conflicts, cross-story dependencies that break independence
+- All tests for a story must pass before moving to next priority
 
----
+**Code Organization**:
+- Services in public `services/` package (returns protobuf types)
+- Handlers in `handlers/` package (with `*_test.go` integration tests)
+- Models in `internal/models/` (GORM models, internal only)
+- Test fixtures in `testutil/fixtures.go`
+- Protobuf in `api/proto/v1/`, generated in `api/gen/v1/`
 
-## Troubleshooting & Debugging (Principle VIII: Root Cause Tracing)
+**Git Workflow**:
+- Commit generated protobuf code after each generation
+- Commit after completing each TDD phase (red, green, refactor)
+- Run full test suite before committing
+- Never commit failing tests or broken code
 
-When encountering problems during implementation, follow this methodology:
-
-### Root Cause Tracing Process
-
-**Step 1: Document the Symptom**
-- What is the observable problem?
-- What behavior was expected vs. actual?
-- Where does the problem manifest (test failure, runtime error, etc.)?
-
-**Step 2: Trace Backward Through Call Chain**
-```
-[SYMPTOM] Observable problem
-    ↑
-[Layer N] Where problem appears
-    ↑
-[Layer N-1] Previous call
-    ↑
-[Layer N-2] Earlier call
-    ↑
-[ROOT CAUSE] Where problem originates
-```
-
-**Step 3: Verify Root Cause**
-- Does fixing this source eliminate the symptom?
-- Is this the original trigger, not just another symptom?
-- Can you explain the mechanism causing the problem?
-
-**Step 4: Fix at Source**
-- Implement fix at root cause location
-- Do NOT add workarounds in symptom location
-- Do NOT weaken tests to accommodate bugs
-- Do NOT remove failing test cases
-
-**Step 5: Verify Fix**
-- Run tests to confirm problem resolved
-- Verify no new problems introduced
-- Confirm all tests pass without workarounds
-
-**Step 6: Document**
-- Record root cause in commit message
-- Add comments explaining the fix if non-obvious
-- Update documentation if revealing systemic issue
-
-### Anti-Patterns to Avoid
-
-**❌ NEVER Do These**:
-1. Remove failing test cases
-2. Change test expectations to match broken behavior
-3. Add `t.Skip()` to flaky tests
-4. Relax assertions ("at least" instead of "exactly")
-5. Add conditional workarounds
-6. Catch and ignore errors
-7. "Make it work" without understanding why
-
-**✅ ALWAYS Do These**:
-1. Trace problem to its source
-2. Fix where it originates
-3. Maintain test integrity
-4. Document root cause
-5. Verify proper fix with tests
-
-### Example: Database Default Override
-
-**Symptom**: Struct field `IsActive: false` becomes `true` in database
-
-**Wrong Approach** ❌:
-```go
-// Remove test case for inactive items
-// OR change test: "if len(items) < 2" instead of "== 2"
-```
-
-**Root Cause Trace** ✅:
-```
-Test creates: IsActive: false
-    ↑
-GORM executes: db.Create(&item)
-    ↑
-PostgreSQL has: is_active BOOL DEFAULT true
-    ↑
-ROOT CAUSE: Model tag has `default:true`
-```
-
-**Proper Fix** ✅:
-```go
-// internal/models/item.go
-IsActive bool `gorm:"not null;index"` // Removed default:true
-```
-
-### When to Apply Root Cause Tracing
-
-Apply this discipline when:
-- ✅ Tests fail unexpectedly
-- ✅ Behavior doesn't match expectations
-- ✅ Errors occur without clear cause
-- ✅ Workarounds seem necessary
-- ✅ "It should work" but doesn't
-- ✅ Flaky tests appear
-- ✅ Data doesn't persist as expected
-
-### Documentation Requirements
-
-When fixing bugs, document in commit:
-```
-Fix: [Brief description]
-
-Root Cause:
-- Symptom: [What was observed]
-- Traced: [Call chain]
-- Source: [Where it originated]
-- Fix: [What was changed at source]
-
-Verified: [How fix was confirmed]
-```
+**Avoid**:
+- Vague tasks without specific file paths
+- Same file conflicts (coordinate protobuf and fixtures)
+- Cross-story dependencies that break independence
+- Implementing before writing tests
+- Skipping edge case coverage
+- Removing tests to make tests pass

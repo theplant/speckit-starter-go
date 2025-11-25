@@ -1882,7 +1882,7 @@ func (s *productService) BulkUpdate(ctx context.Context, updates []*pb.ProductUp
 ```
 ## Technology Stack
 
-- **Language**: Go 1.21+ (recommend latest stable)
+- **Language**: Go 1.25+ (recommend latest stable)
 - **Database**: PostgreSQL 15+ (with JSONB support)
 - **HTTP Framework**: Standard library `net/http` using `http.ServeMux`
 - **Database Access**: GORM (gorm.io/gorm with gorm.io/driver/postgres)
