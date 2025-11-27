@@ -74,7 +74,7 @@ services/                   # PUBLIC package - business logic (reusable by exter
 ├── errors.go              # Sentinel errors (ErrNotFound, ErrDuplicateSKU, etc.)
 └── migrations.go          # AutoMigrate() function for external apps
 
-handlers/                   # PUBLIC or internal - HTTP handlers
+handlers/                   # PUBLIC package - HTTP handlers (reusable)
 ├── product_handler.go
 ├── product_handler_test.go
 ├── error_codes.go         # HTTP error code singleton with ServiceErr mapping
@@ -129,10 +129,10 @@ directories captured above]
 
 **Critical Architecture Notes**:
 - **Services MUST be in public packages** (`services/`, NOT `internal/services/`) to enable cross-application reuse per Constitution Principle XI
+- **Handlers MUST be in public packages** (`handlers/`, NOT `internal/handlers/`) to enable cross-application reuse per Constitution Principle XI
 - **Services return protobuf types** (`*pb.Product`), NOT internal GORM models, per Constitution Principle VI
 - **Models CAN stay internal** (`internal/models/`) - only used internally for database mapping
 - **Protobuf generated code MUST be public** (`api/gen/`) - external apps need these types to call services
-- **Handlers MAY be public or internal** depending on reusability requirements
 - **Middleware SHOULD be internal** - application-specific implementation details
 - **AutoMigrate() MUST be exported** in `services/migrations.go` for external apps to run schema migrations
 

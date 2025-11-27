@@ -24,7 +24,7 @@ All paths reference the Go project structure per plan.md:
 
 - **Protobuf**: `api/proto/v1/` (definitions), `api/gen/v1/` (generated)
 - **Services**: `services/` (PUBLIC package - business logic)
-- **Handlers**: `handlers/` (HTTP layer with integration tests)
+- **Handlers**: `handlers/` (PUBLIC package - HTTP layer with integration tests)
 - **Models**: `internal/models/` (GORM models - internal only)
 - **Tests**: `handlers/*_test.go` (integration tests via ServeHTTP)
 - **Fixtures**: `testutil/` (test helpers and fixtures)
@@ -408,7 +408,7 @@ With multiple developers:
 
 **Code Organization**:
 - Services in public `services/` package (returns protobuf types)
-- Handlers in `handlers/` package (with `*_test.go` integration tests)
+- Handlers in public `handlers/` package (with `*_test.go` integration tests)
 - Models in `internal/models/` (GORM models, internal only)
 - Test fixtures in `testutil/fixtures.go`
 - Protobuf in `api/proto/v1/`, generated in `api/gen/v1/`
