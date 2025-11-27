@@ -11,23 +11,11 @@
 
 ## Technical Context
 
-**Language/Version**: Go 1.25+ (recommend latest stable)  
-**HTTP Framework**: Standard library `net/http` with `http.ServeMux`  
-**Database**: PostgreSQL 15+ (with JSONB support)  
-**Database Access**: GORM (`gorm.io/gorm` with `gorm.io/driver/postgres`)  
-**Protocol Buffers**: `protoc` compiler, `protoc-gen-go`, `protoc-gen-go-grpc`  
-**Validation**: `protoc-gen-validate` for protobuf field validation  
-**Distributed Tracing**: OpenTracing (`github.com/opentracing/opentracing-go`)  
-**Testing Framework**: Standard library `testing` package with `httptest`  
-**Test Assertions**: `google/go-cmp` with `protocmp` for protobuf message comparison  
-**Test Database**: `testcontainers-go` with PostgreSQL module (automatic Docker container management)  
-**Migration Tool**: GORM AutoMigrate (for development and testing)
-
-**Project Type**: [single/web/mobile - determines source structure]  
-**Target Platform**: Linux server (containerized deployment)  
-**Performance Goals**: [domain-specific, e.g., 1000 req/s, <100ms p95 latency or NEEDS CLARIFICATION]  
-**Constraints**: [domain-specific, e.g., <200ms p95, <100MB memory or NEEDS CLARIFICATION]  
-**Scale/Scope**: [domain-specific, e.g., 10k users, 1M requests/day or NEEDS CLARIFICATION]
+**Stack**: Go 1.25+, PostgreSQL 15+, GORM, Protobuf, OpenTracing, testcontainers-go  
+**Project Type**: [single/web/mobile]  
+**Target**: Linux server (containerized)  
+**Performance**: [e.g., 1000 req/s, <100ms p95 or NEEDS CLARIFICATION]  
+**Scale**: [e.g., 10k users, 1M req/day or NEEDS CLARIFICATION]
 
 ## Constitution Check
 
@@ -127,104 +115,59 @@ shared/                    # Shared libraries across services
 **Structure Decision**: [Document the selected structure and reference the real
 directories captured above]
 
-**Critical Architecture Notes**:
-- **Services MUST be in public packages** (`services/`, NOT `internal/services/`) to enable cross-application reuse per Constitution Principle XI
-- **Handlers MUST be in public packages** (`handlers/`, NOT `internal/handlers/`) to enable cross-application reuse per Constitution Principle XI
-- **Services return protobuf types** (`*pb.Product`), NOT internal GORM models, per Constitution Principle VI
-- **Models CAN stay internal** (`internal/models/`) - only used internally for database mapping
-- **Protobuf generated code MUST be public** (`api/gen/`) - external apps need these types to call services
-- **Middleware SHOULD be internal** - application-specific implementation details
-- **AutoMigrate() MUST be exported** in `services/migrations.go` for external apps to run schema migrations
+**Architecture** (Constitution Principle X):
+- Services/handlers: PUBLIC packages (return protobuf, reusable)
+- Models: `internal/models/` (GORM only, never exposed)
+- Protobuf: PUBLIC `api/gen/` (external apps need these)
+- `AutoMigrate()`: Exported in `services/migrations.go`
 
 ## Testing Strategy
 
 ### Test-First Development (TDD)
 
-Per Constitution Principle VII, this project follows strict TDD workflow:
+TDD workflow (Constitution Development Workflow):
 
-1. **Design Phase**: Define API contracts in `.proto` files (request/response messages)
-2. **Generate Code**: Run `protoc` to generate Go structs from protobuf definitions
-3. **Write Tests**: Create table-driven integration tests using protobuf structs (NOT maps)
-4. **Verify Failure**: Run tests to confirm they fail (red phase)
-5. **Review Tests**: Review test design before implementation
-6. **Implement**: Write minimal code to make tests pass (green phase)
-7. **Run Tests**: Execute full test suite immediately after implementation (MANDATORY)
-8. **Verify Success**: Confirm all tests pass (green phase)
-9. **Refactor**: Improve code quality while keeping tests green
-10. **Run Tests Again**: Execute tests after each refactoring change (MANDATORY)
-11. **Complete Task**: Task is only complete when all tests pass
+1. **Design**: Define API in `.proto` files → generate code
+2. **Red**: Write integration tests → verify FAIL
+3. **Green**: Implement → run tests → verify PASS
+4. **Refactor**: Improve code → run tests after each change
+5. **Complete**: Done only when ALL tests pass
 
 ### Integration Testing Requirements
 
-Per Constitution Principles I-VI:
+Constitution Testing Principles I-IX:
 
-- **Integration tests ONLY** - No mocking of database, HTTP clients, or external services
-- **Real PostgreSQL** via `testcontainers-go` for automatic Docker container management
-- **Table-driven design** - All tests use `[]struct` with `name` field
-- **Comprehensive edge cases** (MANDATORY for every API endpoint):
-  - **Input validation**: Empty strings, nil values, invalid formats, SQL injection attempts, XSS payloads
-  - **Boundary conditions**: Zero values, negative numbers, maximum values, empty arrays, nil pointers
-  - **Authentication/Authorization**: Missing tokens, expired tokens, invalid tokens, insufficient permissions
-  - **Data state**: Non-existent resources (404), duplicate entries (conflict), concurrent modifications
-  - **Database errors**: Constraint violations, foreign key failures, transaction conflicts
-  - **HTTP specifics**: Wrong methods, missing headers, invalid content-types, malformed JSON
-  - Edge cases MUST be documented in test case names
-- **Real database fixtures** - Use GORM to insert data, truncate tables after tests with `defer`
-- **ServeHTTP testing** - Test via `httptest.ResponseRecorder`, NOT bypassing HTTP layer
-- **Protobuf structs** - NO `map[string]interface{}`, use generated types
-- **Protobuf assertions** - Use `cmp.Diff()` with `protocmp.Transform()` for ALL message comparisons
-- **Derive from fixtures** - Expected values from test fixtures (request data, DB fixtures), NOT response data (except UUIDs, timestamps, crypto-rand)
-- **Continuous verification** - Run tests after EVERY code change (Principle VII)
-- **Acceptance scenario coverage** - Each spec scenario (US#-AS#) has corresponding test case (Principle IX)
-- **Test coverage analysis** - Use `go test -cover` to identify and close testing gaps (Principle X)
+- **Integration tests ONLY** (NO mocking), real PostgreSQL via testcontainers
+- **Table-driven** with `name` fields
+- **Edge cases MANDATORY**: Input validation, boundaries, auth, data state, database, HTTP
+- **ServeHTTP testing** via root mux (NOT individual handlers)
+- **Protobuf** structs with `protocmp` assertions
+- **Derive from fixtures** (NOT response, except UUIDs/timestamps)
+- **Run tests** after EVERY change (Principle VI)
+- **Map scenarios** to tests (US#-AS#, Principle VIII)
+- **Coverage >80%** (Principle IX)
 
 ### Error Handling Strategy
 
-Per Constitution Principle XIII:
+Constitution Principle XI:
 
-**Service Layer (Internal)**:
-- Define sentinel errors: `var ErrProductNotFound = errors.New("product not found")`
-- Wrap errors with context: `fmt.Errorf("get product %s: %w", id, ErrProductNotFound)`
-- Use `errors.Is()` and `errors.As()` for type-safe error checking
-
-**HTTP Layer (Client-Facing)**:
-- Define error code singleton in `handlers/error_codes.go`
-- Map service errors to HTTP codes via `ErrorCode.ServiceErr` field
-- Use `HandleServiceError()` for automatic error mapping (no switch statement)
-- ALL sentinel errors MUST have test cases
-- ALL HTTP error codes MUST have test cases
+- **Service**: Sentinel errors (`var ErrXxx`), wrap with `fmt.Errorf("%w")`
+- **HTTP**: Error singleton with `ServiceErr` mapping, automatic via `HandleServiceError()`
+- **Testing**: ALL errors must have test cases
 
 ### Test Database Isolation
 
-Per Constitution Development Workflow:
-
-- **Testcontainers-go**: Automatic PostgreSQL container management (Docker required)
-- **Database truncation**: `defer truncateTables(db, "products", "orders", "order_items")`
-- **Truncate with CASCADE**: Handle foreign key dependencies
-- **Each test gets clean state**: Truncation ensures isolation
-- **Parallel test support**: `t.Parallel()` safe - each test gets own container
+- **testcontainers-go** with PostgreSQL (Docker required)
+- **Truncation**: `defer truncateTables(db, "tables...")` with CASCADE
+- **Parallel**: `t.Parallel()` safe
 
 ### Context-Aware Operations
 
-Per Constitution Principle XIV:
-
-- All service methods accept `context.Context` as first parameter
-- HTTP handlers extract context from `r.Context()`
-- Database operations use `db.WithContext(ctx)`
-- External HTTP calls use `http.NewRequestWithContext(ctx, ...)`
-- Long-running operations check `ctx.Done()` periodically
-- Tests verify context cancellation behavior
+Constitution Principle XII: Services accept `context.Context`, handlers use `r.Context()`, database uses `db.WithContext(ctx)`, tests verify cancellation.
 
 ### Distributed Tracing
 
-Per Constitution Principle XII:
-
-- Each HTTP endpoint creates OpenTracing span
-- Service methods create child spans
-- Database operations traced as single span per transaction (NOT per query)
-- Error conditions tagged with `span.SetTag("error", true)`
-- Development uses `opentracing.NoopTracer{}` (no external dependencies)
-- Production configured via environment variables (Jaeger, Zipkin, etc.)
+Constitution Principle XI: HTTP endpoints create OpenTracing spans, services create child spans, database as ONE span per transaction (NOT per query). Dev uses `NoopTracer{}`.
 
 ## Complexity Tracking
 
