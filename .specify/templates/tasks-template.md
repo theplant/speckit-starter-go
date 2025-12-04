@@ -177,4 +177,21 @@ description: "Task list template for feature implementation"
 - Models: `internal/models/` (GORM, internal only)
 - Protobuf: `api/proto/v1/` (source), `api/gen/v1/` (generated)
 
+**Testing Requirements** (Constitution Principles I-IX):
+- **I. Integration Testing**: Real PostgreSQL via testcontainers (NO mocking in implementation code). Mocking ONLY in test code (`*_test.go`) for external systems with justification. Test setup uses public APIs and dependency injection (NOT direct `internal/` package imports).
+- **II. Table-Driven Design**: Test cases as slices of structs with descriptive `name` fields, execute using `t.Run(testCase.name, func(t *testing.T) {...})`
+- **III. Edge Cases MANDATORY**: Input validation (empty/nil, invalid formats, SQL injection, XSS), boundaries (zero/negative/max), auth (missing/expired/invalid tokens), data state (404s, conflicts), database (constraint violations, foreign key failures), HTTP (wrong methods, missing headers, invalid content-types, malformed JSON)
+- **IV. ServeHTTP Testing**: Call root mux ServeHTTP (NOT individual handlers) using `httptest.ResponseRecorder`, identical routing configuration from shared routes package, `r.PathValue()` for parameters
+- **V. Protobuf Structs**: Use `cmp.Diff()` with `protocmp.Transform()`. Derive expected from TEST FIXTURES (request data, database fixtures, config). Copy from response ONLY for truly random: UUIDs, timestamps, crypto-rand tokens. Read `testutil/fixtures.go` for defaults before writing assertions.
+- **VI. Continuous Test Verification**: Run `go test -v ./...` and `go test -v -race ./...` after EVERY change. Fix failures immediately (NO skipping/disabling tests).
+- **VII. Root Cause Tracing**: Trace backward through call chain, fix source NOT symptoms, NEVER remove/weaken tests
+- **VIII. Acceptance Scenario Coverage**: Every US#-AS# has corresponding test with scenario ID in test case name
+- **IX. Coverage >80%**: Run `go test -coverprofile=coverage.out ./...`, analyze with `go tool cover -func=coverage.out`
+
+**Architecture Requirements** (Constitution Principles X-XIII):
+- **X. Service Layer Architecture**: Business logic in Go interfaces (service layer), services in public packages (NOT `internal/`), handlers thin wrappers. Builder pattern: `NewService(db).WithLogger(log).Build()`. Service methods use protobuf structs for ALL parameters/return types (NO primitives, NO maps). `cmd/main.go` calls ONLY handlers/services (NEVER `internal/`).
+- **XI. Distributed Tracing**: HTTP endpoints create OpenTracing spans with operation name (e.g., "POST /api/products"). Services create child spans. Database: ONE span per transaction (NOT per query). External calls propagate trace context. Errors set `span.SetTag("error", true)`. Dev uses `opentracing.NoopTracer{}`.
+- **XII. Context-Aware Operations**: Service methods accept `context.Context` as first parameter. Handlers use `r.Context()`. Database uses `db.WithContext(ctx)`. External calls use `http.NewRequestWithContext(ctx, ...)`. Long-running ops check cancellation periodically. Tests verify cancellation behavior.
+- **XIII. Error Handling Strategy**: Service Layer defines sentinel errors in `services/errors.go`, wraps with `fmt.Errorf("%w")`. HTTP Layer defines error codes in `handlers/error_codes.go` with `ServiceErr` field. `HandleServiceError()` provides automatic mapping (NO switch statements). ALL errors have test cases. Tests use error code definitions (NOT literal strings).
+
 **Avoid**: Implementing before tests, skipping edge cases, removing tests to pass

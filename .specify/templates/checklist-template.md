@@ -12,104 +12,186 @@
 - [ ] CHK002 Unclear requirements marked [NEEDS CLARIFICATION]
 - [ ] CHK003 Acceptance scenarios complete and testable
 
-## Protobuf (Principle V)
+## Testing Principles (I-IX)
 
-- [ ] CHK010 API types in `.proto` with validation rules
-- [ ] CHK011 Generated code committed to `api/gen/v1/`
-- [ ] CHK012 No `map[string]interface{}` used
+### Integration Testing (Principle I)
+- [ ] CHK010 Tests use real PostgreSQL database connections (NO mocking in implementation code)
+- [ ] CHK011 Test database isolated per test run with table truncation using `defer truncateTables(db, "tables...")`
+- [ ] CHK012 Fixtures inserted via GORM using helpers (e.g., `testutil.CreateTestXxx()`) and represent realistic production data
+- [ ] CHK013 Implementation code contains NO mocks or mock interfaces (production code is mock-free)
+- [ ] CHK014 Dependencies requiring testability injected via interfaces using builder pattern (Principle X)
+- [ ] CHK015 Test setup uses public APIs and dependency injection (NOT direct `internal/` package imports)
+- [ ] CHK016 Test code MUST NOT call `internal/` packages for setup - dependencies MUST be injected via service constructors
+- [ ] CHK017 Mocking ONLY permitted in test code when testing interactions with external systems (third-party APIs, message queues)
+- [ ] CHK018 Mock implementations defined in `*_test.go` files (NEVER in production code files)
+- [ ] CHK019 Any use of mocks in tests includes written justification explaining why integration testing is infeasible
+- [ ] CHK020 Testcontainers-go used with PostgreSQL module for automatic Docker container management
 
-## Service Architecture (Principle X)
+### Table-Driven Design (Principle II)
+- [ ] CHK025 Test cases defined as slices of structs with descriptive `name` fields
+- [ ] CHK026 Tests execute using `t.Run(testCase.name, func(t *testing.T) {...})` pattern
+- [ ] CHK027 Test case struct includes all necessary fields: `name`, input data, expected output, setup/teardown functions
 
-- [ ] CHK020 Services in PUBLIC `services/` (NOT `internal/`), return protobuf types
-- [ ] CHK021 Services have NO HTTP dependencies, use builder pattern
-- [ ] CHK022 Handlers are thin wrappers, `AutoMigrate()` exported
-- [ ] CHK023 Models in `internal/models/` only
+### Edge Case Coverage (Principle III)
+- [ ] CHK030 **Input validation**: Empty/nil values, invalid formats, SQL injection, XSS
+- [ ] CHK031 **Boundary conditions**: Zero/negative/max values, empty arrays, nil pointers
+- [ ] CHK032 **Auth** (if applicable): Missing/expired/invalid tokens, insufficient permissions
+- [ ] CHK033 **Data state**: 404s, conflicts, concurrent modifications
+- [ ] CHK034 **Database** (if applicable): Constraint violations, foreign key failures, transaction conflicts
+- [ ] CHK035 **HTTP**: Wrong methods, missing headers, invalid content-types, malformed JSON
 
-## Error Handling (Principle XI)
+### ServeHTTP Endpoint Testing (Principle IV)
+- [ ] CHK040 Tests call root mux ServeHTTP (NOT individual handler methods) using `httptest.ResponseRecorder`
+- [ ] CHK041 Tests use identical routing configuration from shared routes package
+- [ ] CHK042 Tests use HTTP path patterns (e.g., `"POST /api/v1/products/{productID}"`)
+- [ ] CHK043 Path parameters extracted using `r.PathValue()` (NOT string manipulation)
+- [ ] CHK044 Tests verify response status codes, headers, and JSON body structure
 
-- [ ] CHK030 Sentinel errors in `services/errors.go`, wrapped with `fmt.Errorf("%w")`
-- [ ] CHK031 HTTP error singleton in `handlers/error_codes.go` with `ServiceErr` mapping
-- [ ] CHK032 `HandleServiceError()` uses automatic mapping (no switch)
-- [ ] CHK033 ALL errors (sentinel + HTTP) have test cases
+### Protobuf Data Structures (Principle V)
+- [ ] CHK050 API contracts defined in `.proto` files (single source of truth)
+- [ ] CHK051 Tests use protobuf structs with `validate.rules` (NO `map[string]interface{}`)
+- [ ] CHK052 Tests compare using `cmp.Diff()` with `protocmp.Transform()` (NO `==`, `reflect.DeepEqual`, or individual field checks)
+- [ ] CHK053 Expected values derived from TEST FIXTURES (request data, database fixtures, config)
+- [ ] CHK054 Copy from response ONLY for truly random fields: UUIDs (id, customer_id), timestamps (created_at, updated_at), crypto-rand tokens (membership_number, referral_code)
+- [ ] CHK055 Everything else uses fixture values: request payload data, database fixtures, config values, defaults, enums, constants
+- [ ] CHK056 Fixture sources documented in comments (e.g., "// From request fixture", "// From database fixture")
+- [ ] CHK057 AI agents read `testutil/fixtures.go` to find `CreateTestXxx()` defaults before writing assertions
+- [ ] CHK058 Copying non-random response fields is avoided (defeats testing - test always passes)
 
-## Integration Tests (Principles I, II)
+### Continuous Test Verification (Principle VI)
+- [ ] CHK060 Tests executed after every code change
+- [ ] CHK061 Tests pass before any commit (run locally with testcontainers)
+- [ ] CHK062 Test failures fixed immediately (NO skipping/disabling tests)
+- [ ] CHK063 Test execution time optimized if impacting velocity
+- [ ] CHK064 Full test suite (`go test -v ./...`) run after any code changes
+- [ ] CHK065 Run with race detector (`go test -v -race ./...`) for concurrency safety
 
-- [ ] CHK040 Integration tests (NO mocking), real PostgreSQL via testcontainers
-- [ ] CHK041 Table-driven design with descriptive `name` fields
-- [ ] CHK042 Shared setup/teardown in helpers
+### Root Cause Tracing (Principle VII)
+- [ ] CHK070 Problems traced backward through call chain to find original trigger
+- [ ] CHK071 Symptoms distinguished from root causes (treating symptoms creates technical debt)
+- [ ] CHK072 Fixes address source of problem, NOT work around symptoms
+- [ ] CHK073 Test cases NOT removed or weakened to make tests pass
+- [ ] CHK074 Debuggers and logging used to understand control flow
+- [ ] CHK075 Multiple potential causes systematically eliminated
+- [ ] CHK076 Documentation updated to prevent similar issues
+- [ ] CHK077 Root cause verified through testing before closing issue
+- [ ] CHK078 Debugging process followed: Reproduce → Observe → Hypothesize → Test → Fix → Verify → Document
+- [ ] CHK079 AI agents perform root cause analysis before implementing fixes (NO superficial workarounds)
+- [ ] CHK080 Root cause analysis process documented
+- [ ] CHK081 Tests updated to prevent regression of root causes
 
-## Acceptance Scenarios (Principle VIII)
+### Acceptance Scenario Coverage (Principle VIII)
+- [ ] CHK082 Every user scenario in specifications has corresponding automated tests
+- [ ] CHK083 Each acceptance scenario (US#-AS#) in spec.md has a test case
+- [ ] CHK084 Test case names reference source scenarios (e.g., "US1-AS1: New customer enrolls")
+- [ ] CHK085 Test functions use table-driven design with test case structs (Principle II)
+- [ ] CHK086 Each test case struct includes `name` field with scenario ID (US#-AS#)
+- [ ] CHK087 Tests validate complete "Then" clause, not partial behavior
+- [ ] CHK088 No untested scenarios exist (or explicitly deferred with justification)
+- [ ] CHK089 Test coverage analysis verifies all scenarios are tested
+- [ ] CHK090 AI agents flag any scenarios that cannot be tested with justification
+- [ ] CHK091 Tests updated when specifications change to add/modify scenarios
+- [ ] CHK092 Traceability matrix up to date (optional but recommended)
 
-- [ ] CHK050 US1-AS1: [Scenario] - Test implemented
-- [ ] CHK051 US1-AS2: [Scenario] - Test implemented
-- [ ] CHK052 All spec scenarios tested with US#-AS# references
+### Test Coverage & Gap Analysis (Principle IX)
+- [ ] CHK093 `go test -coverprofile=coverage.out ./...` run to identify gaps
+- [ ] CHK094 `go tool cover -func=coverage.out` used to list uncovered functions/lines
+- [ ] CHK095 Files with low coverage analyzed to understand untested branches (error paths, edge cases, conditionals)
+- [ ] CHK096 Table-driven test cases added covering identified gaps (following Principles I-VIII)
+- [ ] CHK097 Coverage re-run to confirm gaps are closed (target >80% for business logic)
+- [ ] CHK098 Dead code removed if cannot be reached legitimately (rather than exempting)
+- [ ] CHK099 AI agent workflow: Identify gaps → Analyze gaps → Write tests → Verify → Clean dead code
 
-## Edge Cases (Principle III - NON-NEGOTIABLE)
+## System Architecture (X)
 
-- [ ] CHK060 **Input validation**: Empty/nil, invalid formats, SQL injection, XSS
-- [ ] CHK070 **Boundaries**: Zero/negative/max values, empty arrays, nil pointers
-- [ ] CHK080 **Auth** (if applicable): Missing/expired/invalid tokens, insufficient permissions
-- [ ] CHK090 **Data state**: 404s, duplicates, concurrent modifications
-- [ ] CHK100 **Database** (if applicable): Constraints, foreign keys, transaction conflicts
-- [ ] CHK110 **HTTP**: Wrong methods, missing headers, invalid content-types, malformed JSON
+### Service Layer Architecture (Principle X)
+- [ ] CHK100 Business logic defined as Go interfaces (service layer)
+- [ ] CHK101 Services have NO HTTP type dependencies (only `context.Context` allowed)
+- [ ] CHK102 Handlers are thin wrappers delegating to services (no business logic in handlers)
+- [ ] CHK103 Services and handlers in public packages (NOT `internal/`) for reusability by external apps
+- [ ] CHK104 External dependencies injected via builder pattern
+- [ ] CHK105 Services use builder pattern: `NewService(db).WithLogger(log).Build()` (required params in constructor, optional via `With*()`)
+- [ ] CHK106 Builder is unexported type, returns public interface from `Build()` method
+- [ ] CHK107 `cmd/main.go` calls only handlers or services (NEVER `internal/` packages directly)
+- [ ] CHK108 If `cmd/main.go` needs functionality from `internal/`, code promoted to public service
+- [ ] CHK109 Service methods use protobuf structs for ALL parameters and return types (NO primitives, NO maps, NO slices of primitives)
+- [ ] CHK110 Architecture follows: HTTP Handler (thin) → Service Interface (business logic) → Database
+- [ ] CHK111 Services return protobuf types (NEVER internal GORM models)
+- [ ] CHK112 Models stay in `internal/models/` (services use internally but never expose)
+- [ ] CHK113 `AutoMigrate()` function exported in `services/migrations.go` for external apps to migrate schema
 
-## ServeHTTP Testing (Principle IV)
+## Distributed Tracing (XI)
 
-- [ ] CHK120 Tests call root mux ServeHTTP (NOT handler methods), use `httptest`
-- [ ] CHK121 Shared routing config, HTTP path patterns (e.g., `"POST /api/v1/products/{id}"`)
-- [ ] CHK122 Path params via `r.PathValue()` (NOT URL manipulation)
-- [ ] CHK123 Response status/headers/body verified
+- [ ] CHK110 HTTP endpoints create OpenTracing spans with operation name (e.g., "POST /api/products")
+- [ ] CHK111 Service methods create child spans (e.g., "ProductService.Create")
+- [ ] CHK112 Database operations: ONE span per transaction (NOT per SQL query)
+- [ ] CHK113 External calls (HTTP, gRPC) propagate trace context
+- [ ] CHK114 Errors set `span.SetTag("error", true)`
+- [ ] CHK115 Spans include tags: `http.method`, `http.url`, `http.status_code`
+- [ ] CHK116 Development/Tests use `opentracing.NoopTracer{}`
+- [ ] CHK117 Production configured from environment variables (Jaeger, Zipkin, Datadog, etc.)
 
-## Protobuf Assertions (Principle V)
+## Context-Aware Operations (XII)
 
-- [ ] CHK130 Use `cmp.Diff()` with `protocmp.Transform()` (NO `==` or field comparisons)
-- [ ] CHK131 Expected values from fixtures (NOT response, except UUIDs/timestamps)
-- [ ] CHK132 Fixture sources documented in comments
+- [ ] CHK120 Service methods accept `context.Context` as first parameter
+- [ ] CHK121 HTTP handlers use `r.Context()`
+- [ ] CHK122 Database operations use `db.WithContext(ctx)`
+- [ ] CHK123 External HTTP calls use `http.NewRequestWithContext(ctx, ...)`
+- [ ] CHK124 Long-running operations check context cancellation periodically
+- [ ] CHK125 Tests verify context cancellation behavior
 
-## Database Fixtures (Principle I)
+## Error Handling Strategy (XIII)
 
-- [ ] CHK140 Fixtures inserted via GORM, use helpers (`testutil.CreateTestXxx()`)
-- [ ] CHK141 Tests use `defer truncateTables(db, "tables...")` with CASCADE
+- [ ] CHK130 Two-layer error strategy implemented: Service Layer (sentinel errors) + HTTP Layer (error codes)
+- [ ] CHK131 Service Layer: Sentinel errors defined as package-level vars in `services/errors.go` (e.g., `var ErrProductNotFound = errors.New("product not found")`)
+- [ ] CHK132 Service Layer: Errors wrapped with `fmt.Errorf("context: %w", err)` to create breadcrumb trail
+- [ ] CHK133 HTTP Layer: Error code struct defined in `handlers/error_codes.go` with fields: `Code`, `Message`, `HTTPStatus`, `ServiceErr`
+- [ ] CHK134 HTTP Layer: Singleton error codes struct provides all error definitions in one place
+- [ ] CHK135 `HandleServiceError()` uses `errors.Is()` for automatic mapping (NO switch statements)
+- [ ] CHK136 `HandleServiceError()` checks context errors first: `context.Canceled` (499), `context.DeadlineExceeded` (504)
+- [ ] CHK137 `HandleServiceError()` iterates through error codes checking `ServiceErr` field for automatic HTTP mapping
+- [ ] CHK138 Testing: ALL errors (sentinel + HTTP codes) have test cases
+- [ ] CHK139 Error assertions in tests use error code definitions from `handlers/error_codes.go` (NOT literal strings)
+- [ ] CHK140 Example: `if errResp.Code != Errors.ProductNotFound.Code` (NOT `"product not found"`)
+- [ ] CHK141 Benefits achieved: Type-safe with `errors.Is()`, wrapping creates error breadcrumb trail, no switch statements, single source of truth
 
-## Context (Principle XII)
+## Database Fixtures
 
-- [ ] CHK150 Services accept `context.Context` first, handlers use `r.Context()`
-- [ ] CHK151 Database uses `db.WithContext(ctx)`, external calls use `http.NewRequestWithContext()`
-- [ ] CHK152 Long-running ops check `ctx.Done()`, tests verify cancellation
-
-## Tracing (Principle XI)
-
-- [ ] CHK160 HTTP endpoints create OpenTracing spans with operation names
-- [ ] CHK161 Service methods create child spans, database as ONE span per transaction
-- [ ] CHK162 Errors tagged `span.SetTag("error", true)`, includes http.method/url/status tags
-
-## Test Execution (Principle VI)
-
-- [ ] CHK170 Tests written BEFORE implementation (TDD)
-- [ ] CHK171 Tests run after EVERY change, pass before commit
-- [ ] CHK172 Race detector used, failures fixed immediately (NOT skipped)
-
-## Coverage (Principle IX)
-
-- [ ] CHK180 `go test -cover` run, gaps analyzed
-- [ ] CHK181 Coverage >80% achieved, missing tests added or dead code removed
-
-## Root Cause (Principle VII)
-
-- [ ] CHK190 Problems traced to root cause (NOT symptoms/workarounds)
-- [ ] CHK191 Tests NOT removed/weakened, root cause verified
+- [ ] CHK145 Fixtures inserted via GORM (NO raw SQL), use helpers (`testutil.CreateTestXxx()`)
+- [ ] CHK146 Fixtures represent realistic production data (not minimal/contrived data)
+- [ ] CHK147 Tests use `defer truncateTables(db, "tables...")` with CASCADE for isolation
+- [ ] CHK148 Truncate in reverse dependency order (children before parents to handle foreign keys)
+- [ ] CHK149 Centralized truncation logic in helper function (e.g., `truncateTables()` in `testutil/db.go`)
+- [ ] CHK150 Test database setup uses testcontainers-go with PostgreSQL module
+- [ ] CHK151 Schema setup uses GORM `AutoMigrate` (matches production)
+- [ ] CHK152 Cleanup uses `defer container.Terminate(ctx)` pattern
+- [ ] CHK153 Benefits: Tests real production behavior with commits, works with any code structure, simple and fast (~1-5ms overhead)
 
 ## Code Review
 
-- [ ] CHK200 Constitution compliance verified
-- [ ] CHK201 All scenarios tested (US#-AS# in names), success + error paths
-- [ ] CHK202 Tests run and passed, errors wrapped with `%w`
-- [ ] CHK203 Services PUBLIC (return protobuf), no skipped tests
+- [ ] CHK200 Constitution compliance verified against all principles (I-XIII)
+- [ ] CHK201 Tests reviewed BEFORE implementation code (TDD workflow)
+- [ ] CHK202 All scenarios tested (US#-AS# in test case names), success + error paths covered
+- [ ] CHK203 Tests run and passed: `go test -v ./...` and `go test -v -race ./...`
+- [ ] CHK204 ALL tests pass before code review approval (no exceptions)
+- [ ] CHK205 Errors wrapped with `fmt.Errorf("%w")` in service layer
+- [ ] CHK206 Services in public packages (NOT `internal/`), return protobuf (NOT models)
+- [ ] CHK207 No skipped or disabled tests
+- [ ] CHK208 GORM used for database access (no raw SQL unless justified)
+- [ ] CHK209 Fixes address root causes, not symptoms (Principle VII)
+- [ ] CHK210 Expected values derived from fixtures (NOT copied from response except UUIDs/timestamps/crypto-rand)
+- [ ] CHK211 Service methods use protobuf structs for ALL parameters/returns (NO primitives, NO maps)
 
 ## Cleanup
 
-- [ ] CHK210 Root cause documented (if debugging), temp files removed
-- [ ] CHK211 Comments explain WHY, protobuf code committed, no hardcoded values
+- [ ] CHK215 Root cause documented (if debugging was performed)
+- [ ] CHK216 Temp files removed (helper scripts, test outputs, debugging code)
+- [ ] CHK217 Comments explain WHY (not what - code shows what)
+- [ ] CHK218 Protobuf generated code committed (from `api/gen/`)
+- [ ] CHK219 No hardcoded values (use config, env vars, or constants)
+- [ ] CHK220 All tests pass before code review approval: `go test -v ./...` and `go test -v -race ./...`
+- [ ] CHK221 Linting passes: `go vet ./...`
+- [ ] CHK222 Coverage verified: `go test -cover ./...` shows >80% for business logic
 
 ## Notes
 
