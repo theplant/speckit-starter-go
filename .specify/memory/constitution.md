@@ -11,8 +11,15 @@ This constitution defines the core principles and governance for Go microservice
 - Tests MUST use real PostgreSQL database connections (NO mocking)
 - Test database MUST be isolated per test run with table truncation
 - Fixtures MUST be inserted via GORM and represent realistic production data
+- Implementation code MUST NEVER contain mocks or mock interfaces
+- Dependencies requiring testability MUST be injected via interfaces using builder pattern (Principle X)
+- Test code MUST NOT call `internal/` packages for setup - dependencies MUST be injected via service constructors
+- Test setup MUST use public APIs and dependency injection (NOT direct internal package imports)
+- Mocking is ONLY permitted in test code when testing interactions with external systems (third-party APIs, message queues)
+- Mock implementations MUST be defined in `*_test.go` files (NEVER in production code files)
+- Any use of mocks in tests MUST include written justification explaining why integration testing is infeasible
 
-**Rationale**: Integration tests catch real-world issues mocks cannot (constraints, transactions, serialization). Real fixtures validate actual database behavior.
+**Rationale**: Integration tests catch real-world issues mocks cannot (constraints, transactions, serialization). Real fixtures validate actual database behavior. Mocks in implementation code create fake abstraction layers that hide real behavior and complicate the codebase. Dependency injection provides testability without polluting production code with test doubles. Test code calling internal packages creates tight coupling and breaks encapsulation - all setup dependencies should flow through public service constructors using the builder pattern. When mocking is truly necessary (external services), it should be explicit, isolated to `*_test.go` files, and justified to prevent overuse.
 
 ### II. Table-Driven Design
 
@@ -374,10 +381,12 @@ func TestProductCreate(t *testing.T) {
 - Services and handlers MUST be in public packages (NOT `internal/`) for reusability
 - External dependencies MUST be injected via builder pattern
 - Services MUST use builder pattern: `NewService(db).WithLogger(log).Build()`
+- `cmd/main.go` MUST ONLY call handlers or services (NEVER `internal/` packages directly)
+- If `cmd/main.go` needs functionality from `internal/`, that code MUST be promoted to a public service
 
 **Architecture**: `HTTP Handler (thin) → Service Interface (business logic) → Database`
 
-**Rationale**: Separates transport from business logic, enables reuse across HTTP/gRPC/CLI/workers, allows external Go apps to import as library. Services in `internal/` cannot be imported externally (Go visibility rules).
+**Rationale**: Separates transport from business logic, enables reuse across HTTP/gRPC/CLI/workers, allows external Go apps to import as library. Services in `internal/` cannot be imported externally (Go visibility rules). Main entry points calling internal packages creates tight coupling and breaks architectural boundaries - all application logic should flow through public services.
 
 ### Service Method Parameters: Protobuf Structs Only
 
@@ -414,7 +423,7 @@ type ProductService interface {
 // ✅ CORRECT: Services/handlers in public packages
 github.com/theplant/myapp/
 ├── api/
-│   ├── proto/         // PUBLIC - protobuf source files
+│   ├── proto/pim/v1/  // PUBLIC - protobuf source files
 │   │   └── product.proto
 │   └── gen/pim/v1/    // PUBLIC - generated protobuf (services return these)
 │       └── product.pb.go
@@ -422,10 +431,11 @@ github.com/theplant/myapp/
 │   ├── product_service.go
 │   └── errors.go
 ├── handlers/          // PUBLIC - reusable routing/HTTP logic
-│   └── product_handler.go
+│   ├── product_handler.go
+│   ├── error_codes.go
+│   └── middleware.go
 └── internal/          // INTERNAL - implementation only
     ├── models/        // ✅ OK (services return protobuf, not models)
-    ├── middleware/    // App-specific
     └── config/        // Not exposed
 
 // ❌ WRONG: Services in internal (cannot import)
@@ -896,23 +906,29 @@ func TestProductAPI_Create_DuplicateSKU(t *testing.T) {
         t.Errorf("Expected 409, got %d", rec.Code)
     }
     
-    // Verify error response structure
-    var errResp struct {
-        Code string `json:"code"`
-    }
+    // Use error code definitions (NOT literal strings)
+    var errResp ErrorCode
     json.NewDecoder(rec.Body).Decode(&errResp)
     
-    if errResp.Code != "DUPLICATE_SKU" {
-        t.Errorf("Expected DUPLICATE_SKU, got %s", errResp.Code)
+    if errResp.Code != Errors.DuplicateSKU.Code {
+        t.Errorf("Expected %s, got %s", Errors.DuplicateSKU.Code, errResp.Code)
     }
 }
 ```
+
+**Error Assertions in Tests**:
+- Tests MUST use `ErrorCode` definitions from `handlers/error_codes.go` (NOT literal strings)
+- Tests MUST validate both `Code` and `Message` fields against definitions
+- Example: `if errResp.Code != Errors.WorkflowNotFound.Code` (NOT `"workflow not found"`)
+
+**Rationale**: Error code definitions provide single source of truth. Tests stay in sync when messages change.
 
 **Key Benefits**:
 - ✅ No switch statements (automatic mapping via ServiceErr field)
 - ✅ Type-safe with `errors.Is()`
 - ✅ Wrapping creates error breadcrumb trail
 - ✅ ALL errors must be tested
+- ✅ Error assertions use definitions (maintainable, refactoring-safe)
 
 
 ## Technology Stack
@@ -964,5 +980,5 @@ All pull requests MUST be reviewed against these constitutional requirements:
 
 This constitution is version-controlled alongside code and follows the same review process as code changes.
 
-**Version**: 1.6.4 | **Ratified**: 2025-11-20 | **Last Amended**: 2025-11-27
+**Version**: 1.6.6 | **Ratified**: 2025-11-20 | **Last Amended**: 2025-12-04
 
