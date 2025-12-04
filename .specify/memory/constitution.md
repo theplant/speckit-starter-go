@@ -58,7 +58,7 @@ Calling `handler.Create(rec, req)` bypasses routing, middleware, and method matc
 
 All public API data structures MUST be defined in Protocol Buffers:
 - API contracts MUST be defined in `.proto` files (single source of truth)
-- Tests MUST use protobuf structs with `validate.rules` (NO `map[string]interface{}`)
+- Tests MUST use protobuf structs (NO `map[string]interface{}`)
 - Tests MUST compare using `cmp.Diff()` with `protocmp.Transform()` (NO `==`, `reflect.DeepEqual`, or individual field checks)
 - **Expected values MUST be derived from TEST FIXTURES** (request data, database fixtures, config)
 - **Copy from response ONLY for truly random fields**: UUIDs, timestamps, crypto-rand tokens
@@ -215,7 +215,7 @@ func TestUserAcceptanceScenarios(t *testing.T) {
 1. **Define Schema**: Create or update `.proto` files in `api/` directory
 2. **Generate Code**: Run `go generate` to create Go structs (add `//go:generate` directives)
 3. **Use in Code**: Import generated packages, use typed structs throughout
-4. **Validate**: Use protoc-gen-validate for automatic field validation
+4. **Validate**: Implement validation in service layer (check required fields, formats, constraints)
 5. **Version**: Use protobuf field numbers consistently (never reuse deleted field numbers)
 
 ### Test Database Management
@@ -939,7 +939,6 @@ func TestProductAPI_Create_DuplicateSKU(t *testing.T) {
 - **Database Access**: GORM (gorm.io/gorm with gorm.io/driver/postgres)
 - **Distributed Tracing**: OpenTracing (github.com/opentracing/opentracing-go)
 - **Protocol Buffers**: protoc compiler, protoc-gen-go, protoc-gen-go-grpc
-- **Validation**: protoc-gen-validate for protobuf field validation
 - **Testing**: Standard library `testing` package with `httptest`
 - **Test Comparison**: google/go-cmp with protocmp for protobuf message assertions
 - **Test Database**: testcontainers-go with PostgreSQL module (automatic Docker container management)
@@ -980,5 +979,5 @@ All pull requests MUST be reviewed against these constitutional requirements:
 
 This constitution is version-controlled alongside code and follows the same review process as code changes.
 
-**Version**: 1.6.6 | **Ratified**: 2025-11-20 | **Last Amended**: 2025-12-04
+**Version**: 1.7.0 | **Ratified**: 2025-11-20 | **Last Amended**: 2025-12-04
 

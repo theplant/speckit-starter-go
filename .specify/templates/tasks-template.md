@@ -48,7 +48,7 @@ description: "Task list template for feature implementation"
 
 - [ ] T001 Initialize Go module with Go 1.25+
 - [ ] T002 [P] Setup `api/proto/v1/` and `api/gen/v1/`
-- [ ] T003 [P] Configure `protoc` with `protoc-gen-go`, `protoc-gen-validate`
+- [ ] T003 [P] Configure `protoc` with `protoc-gen-go`, `protoc-gen-go-grpc`
 - [ ] T004 [P] Setup `services/`, `handlers/`, `internal/models/`, `testutil/`, `cmd/api/`
 
 ---

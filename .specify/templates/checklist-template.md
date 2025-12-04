@@ -49,7 +49,7 @@
 
 ### Protobuf Data Structures (Principle V)
 - [ ] CHK050 API contracts defined in `.proto` files (single source of truth)
-- [ ] CHK051 Tests use protobuf structs with `validate.rules` (NO `map[string]interface{}`)
+- [ ] CHK051 Tests use protobuf structs (NO `map[string]interface{}`)
 - [ ] CHK052 Tests compare using `cmp.Diff()` with `protocmp.Transform()` (NO `==`, `reflect.DeepEqual`, or individual field checks)
 - [ ] CHK053 Expected values derived from TEST FIXTURES (request data, database fixtures, config)
 - [ ] CHK054 Copy from response ONLY for truly random fields: UUIDs (id, customer_id), timestamps (created_at, updated_at), crypto-rand tokens (membership_number, referral_code)

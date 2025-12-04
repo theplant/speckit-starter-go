@@ -11,7 +11,7 @@ This project follows the Go Project Constitution, which defines core principles 
 - **II. Table-Driven Design**: Test cases as slices of structs with descriptive `name` fields, execute using `t.Run(testCase.name, func(t *testing.T) {...})`
 - **III. Comprehensive Edge Case Coverage**: Input validation (empty/nil, invalid formats, SQL injection, XSS), boundary conditions (zero/negative/max), auth (missing/expired/invalid tokens), data state (404s, conflicts, concurrent modifications), database (constraint violations, foreign key failures), HTTP (wrong methods, missing headers, invalid content-types, malformed JSON)
 - **IV. ServeHTTP Endpoint Testing**: Call root mux ServeHTTP (NOT individual handlers), identical routing configuration, HTTP path patterns, `r.PathValue()` for parameters
-- **V. Protobuf Data Structures**: API contracts in `.proto` files, tests use protobuf structs with `validate.rules`, compare using `cmp.Diff()` with `protocmp.Transform()`, derive expected values from TEST FIXTURES (NOT response except truly random fields: UUIDs, timestamps, crypto-rand tokens)
+- **V. Protobuf Data Structures**: API contracts in `.proto` files, tests use protobuf structs (NO `map[string]interface{}`), compare using `cmp.Diff()` with `protocmp.Transform()`, derive expected values from TEST FIXTURES (NOT response except truly random fields: UUIDs, timestamps, crypto-rand tokens)
 - **VI. Continuous Test Verification**: Run tests after EVERY code change, pass before commit, fix failures immediately, optimize if impacting velocity
 - **VII. Root Cause Tracing**: Trace problems backward through call chain, distinguish symptoms from root causes, fix source NOT symptoms, NEVER remove/weaken tests
 - **VIII. Acceptance Scenario Coverage**: Every user scenario (US#-AS#) in spec.md has corresponding automated test with scenario ID in test case name
@@ -91,7 +91,7 @@ This project follows the Go Project Constitution, which defines core principles 
 - **Table-driven** with `name` fields, execute using `t.Run(testCase.name, func(t *testing.T) {...})`
 - **Edge cases MANDATORY**: Input validation (empty/nil, invalid formats, SQL injection, XSS), boundary conditions (zero/negative/max), auth (missing/expired/invalid tokens), data state (404s, conflicts), database (constraint violations, foreign key failures), HTTP (wrong methods, missing headers, invalid content-types, malformed JSON)
 - **ServeHTTP testing** via root mux (NOT individual handlers), identical routing configuration from shared routes package
-- **Protobuf** structs with `validate.rules`, use `cmp.Diff()` with `protocmp.Transform()` (NO `==`, `reflect.DeepEqual`, or individual field checks)
+- **Protobuf** structs (NO `map[string]interface{}`), use `cmp.Diff()` with `protocmp.Transform()` (NO `==`, `reflect.DeepEqual`, or individual field checks)
 - **Derive from fixtures** (request data, database fixtures, config). Copy from response ONLY for truly random fields: UUIDs, timestamps, crypto-rand tokens. Read `testutil/fixtures.go` to find `CreateTestXxx()` defaults before writing assertions.
 - **Run tests** after EVERY change with `go test -v ./...` and `go test -v -race ./...` for concurrency safety
 - **Map scenarios** to tests (US#-AS# in test case names)

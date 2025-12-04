@@ -26,7 +26,7 @@
 - [ ] **II. Table-Driven Design**: Test cases as slices of structs with descriptive `name` fields, execute using `t.Run(testCase.name, func(t *testing.T) {...})`
 - [ ] **III. Comprehensive Edge Case Coverage**: Input validation (empty/nil, invalid formats, SQL injection, XSS), boundaries (zero/negative/max), auth (missing/expired/invalid tokens), data state (404s, conflicts), database (constraint violations, foreign key failures), HTTP (wrong methods, missing headers, invalid content-types, malformed JSON)
 - [ ] **IV. ServeHTTP Endpoint Testing**: Call root mux ServeHTTP (NOT individual handlers) using `httptest.ResponseRecorder`, identical routing configuration, HTTP path patterns, `r.PathValue()` for parameters
-- [ ] **V. Protobuf Data Structures**: API contracts in `.proto` files, tests use protobuf structs with `validate.rules`, compare using `cmp.Diff()` with `protocmp.Transform()`, derive expected from TEST FIXTURES (NOT response except truly random: UUIDs, timestamps, crypto-rand tokens)
+- [ ] **V. Protobuf Data Structures**: API contracts in `.proto` files, tests use protobuf structs (NO `map[string]interface{}`), compare using `cmp.Diff()` with `protocmp.Transform()`, derive expected from TEST FIXTURES (NOT response except truly random: UUIDs, timestamps, crypto-rand tokens)
 - [ ] **VI. Continuous Test Verification**: Run `go test -v ./...` after every change, pass before commit, fix failures immediately, run with `-race` for concurrency safety
 - [ ] **VII. Root Cause Tracing**: Trace backward through call chain, distinguish symptoms from root causes, fix source NOT symptoms, NEVER remove/weaken tests, use debuggers/logging
 - [ ] **VIII. Acceptance Scenario Coverage**: Every user scenario (US#-AS#) in spec.md has corresponding test, test case names reference scenarios, validate complete "Then" clause
@@ -189,7 +189,7 @@ Constitution Testing Principles I-IX:
 - **Table-driven** with `name` fields, execute using `t.Run(testCase.name, func(t *testing.T) {...})`
 - **Edge cases MANDATORY**: Input validation (empty/nil, invalid formats, SQL injection, XSS), boundaries (zero/negative/max), auth (missing/expired/invalid tokens), data state (404s, conflicts), database (constraint violations, foreign key failures), HTTP (wrong methods, missing headers, invalid content-types, malformed JSON)
 - **ServeHTTP testing** via root mux (NOT individual handlers), identical routing configuration from shared routes package
-- **Protobuf** structs with `validate.rules`, use `cmp.Diff()` with `protocmp.Transform()`
+- **Protobuf** structs (NO `map[string]interface{}`), use `cmp.Diff()` with `protocmp.Transform()`
 - **Derive from fixtures** (request data, database fixtures, config). Copy from response ONLY for truly random: UUIDs, timestamps, crypto-rand tokens. Read `testutil/fixtures.go` for defaults.
 - **Run tests** after EVERY change: `go test -v ./...` and `go test -v -race ./...` (Principle VI)
 - **Map scenarios** to tests (US#-AS# in test case names, Principle VIII)
