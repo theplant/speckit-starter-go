@@ -242,8 +242,8 @@ Use **database truncation** for test isolation:
 **Data Flow**: HTTP → Handler → Service (protobuf) → GORM Model → Database
 
 **Layers**:
-- **HTTP**: JSON serialization of protobuf structs
-- **Handler**: Thin wrapper, delegates to service
+- **HTTP**: JSON serialization of protobuf structs using `protojson` (camelCase)
+- **Handler**: Thin wrapper, delegates to service, uses `DecodeProtoJSON`/`RespondWithProto` helpers
 - **Service**: Business logic, accepts/returns protobuf (NEVER internal models)
 - **Model**: Internal GORM models (for database only)
 
@@ -259,11 +259,13 @@ import (
     "context"
     "encoding/json"
     "fmt"
+    "io"
     "net/http"
     "net/http/httptest"
     "testing"
     
     "github.com/google/go-cmp/cmp"
+    "google.golang.org/protobuf/encoding/protojson"
     "google.golang.org/protobuf/testing/protocmp"
     "gorm.io/driver/postgres"
     "gorm.io/gorm"
@@ -343,7 +345,7 @@ func TestProductCreate(t *testing.T) {
     mux := SetupRoutes(service)  // ✅ Shared routes
     
     reqData := &pb.CreateProductRequest{Name: "Test Product", Sku: "TEST-001"}
-    body, _ := json.Marshal(reqData)
+    body, _ := protojson.Marshal(reqData)  // ✅ Use protojson for protobuf (camelCase)
     req := httptest.NewRequest("POST", "/api/products", bytes.NewReader(body))
     rec := httptest.NewRecorder()
     
@@ -355,7 +357,8 @@ func TestProductCreate(t *testing.T) {
     }
     
     var response pb.Product
-    json.NewDecoder(rec.Body).Decode(&response)
+    respBody, _ := io.ReadAll(rec.Body)
+    protojson.Unmarshal(respBody, &response)  // ✅ Use protojson for protobuf
     
     expected := &pb.Product{
         Id:   response.Id,    // Generated UUID
@@ -570,9 +573,26 @@ type ProductHandler struct {
     service ProductService
 }
 
+// Helper functions for protojson serialization (handlers/helpers.go)
+func RespondWithProto(w http.ResponseWriter, status int, msg proto.Message) {
+    w.Header().Set("Content-Type", "application/json")
+    w.WriteHeader(status)
+    data, _ := protojson.Marshal(msg)  // ✅ Returns camelCase JSON
+    w.Write(data)
+}
+
+func DecodeProtoJSON(r *http.Request, msg proto.Message) error {
+    body, err := io.ReadAll(r.Body)
+    if err != nil {
+        return err
+    }
+    defer r.Body.Close()
+    return protojson.Unmarshal(body, msg)  // ✅ Accepts camelCase JSON
+}
+
 func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
     var req pb.CreateProductRequest
-    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+    if err := DecodeProtoJSON(r, &req); err != nil {  // ✅ Use protojson (accepts camelCase)
         RespondWithError(w, Errors.InvalidRequest)  // Principle XIII
         return
     }
@@ -583,8 +603,7 @@ func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
         return
     }
     
-    w.Header().Set("Content-Type", "application/json")
-    json.NewEncoder(w).Encode(product)
+    RespondWithProto(w, http.StatusCreated, product)  // ✅ Use protojson (returns camelCase)
 }
 
 // Example handler using path parameter extraction
@@ -605,8 +624,7 @@ func (h *ProductHandler) Get(w http.ResponseWriter, r *http.Request) {
         return
     }
     
-    w.Header().Set("Content-Type", "application/json")
-    json.NewEncoder(w).Encode(product)
+    RespondWithProto(w, http.StatusOK, product)  // ✅ Use protojson (returns camelCase)
 }
 
 ```
@@ -666,7 +684,11 @@ func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
     span.SetTag("http.method", r.Method)
     
     var req pb.CreateProductRequest
-    json.NewDecoder(r.Body).Decode(&req)
+    if err := DecodeProtoJSON(r, &req); err != nil {  // ✅ Use protojson (accepts camelCase)
+        span.SetTag("error", true)
+        RespondWithError(w, Errors.InvalidRequest)
+        return
+    }
     
     product, err := h.service.Create(r.Context(), &req)
     if err != nil {
@@ -676,7 +698,7 @@ func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
     }
     
     span.SetTag("http.status_code", http.StatusCreated)
-    json.NewEncoder(w).Encode(product)
+    RespondWithProto(w, http.StatusCreated, product)  // ✅ Use protojson (returns camelCase)
 }
 
 // Service - child span
@@ -751,14 +773,17 @@ func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
     ctx := r.Context()  // Principle XII: Extract context
     
     var req pb.CreateProductRequest
-    json.NewDecoder(r.Body).Decode(&req)
+    if err := DecodeProtoJSON(r, &req); err != nil {  // ✅ Use protojson (accepts camelCase)
+        RespondWithError(w, Errors.InvalidRequest)
+        return
+    }
     
     product, err := h.service.Create(ctx, &req)  // Propagate context
     if err != nil {
         HandleServiceError(w, err)  // Principle XIII: Handles context.Canceled automatically
         return
     }
-    json.NewEncoder(w).Encode(product)
+    RespondWithProto(w, http.StatusCreated, product)  // ✅ Use protojson (returns camelCase)
 }
 
 // Long-running - check cancellation periodically
@@ -799,6 +824,14 @@ var (
 ```
 
 **HTTP Layer**:
+```proto
+// api/proto/common/v1/error.proto - Define error response as protobuf
+message ErrorResponse {
+    string code = 1;     // e.g., "PRODUCT_NOT_FOUND"
+    string message = 2;  // e.g., "Product not found"
+}
+```
+
 ```go
 // handlers/error_codes.go - Singleton with automatic mapping
 type ErrorCode struct {
@@ -818,6 +851,15 @@ var Errors = struct {
     ProductNotFound: ErrorCode{"PRODUCT_NOT_FOUND", "Product not found", 404, services.ErrProductNotFound},
     DuplicateSKU:    ErrorCode{"DUPLICATE_SKU", "SKU already exists", 409, services.ErrDuplicateSKU},
     InternalError:   ErrorCode{"INTERNAL_ERROR", "Internal server error", 500, nil},
+}
+
+// RespondWithError sends error response using protobuf ErrorResponse
+func RespondWithError(w http.ResponseWriter, errCode ErrorCode) {
+    w.Header().Set("Content-Type", "application/json")
+    w.WriteHeader(errCode.HTTPStatus)
+    errResp := &pb.ErrorResponse{Code: errCode.Code, Message: errCode.Message}
+    data, _ := protojson.Marshal(errResp)  // ✅ Use protojson for error responses too
+    w.Write(data)
 }
 ```
 
@@ -839,7 +881,7 @@ func (s *productService) Get(ctx context.Context, req *pb.GetProductRequest) (*p
 ```go
 func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
     var req pb.CreateProductRequest
-    if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+    if err := DecodeProtoJSON(r, &req); err != nil {  // ✅ Use protojson (accepts camelCase)
         RespondWithError(w, Errors.InvalidRequest)
         return
     }
@@ -850,8 +892,7 @@ func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
         return
     }
     
-    w.Header().Set("Content-Type", "application/json")
-    json.NewEncoder(w).Encode(product)
+    RespondWithProto(w, http.StatusCreated, product)  // ✅ Use protojson (returns camelCase)
 }
 
 // Automatically maps service errors to HTTP responses
@@ -894,7 +935,7 @@ func TestProductAPI_Create_DuplicateSKU(t *testing.T) {
     
     // Principle V: Use protobuf structs
     reqData := &pb.CreateProductRequest{Name: "New Product", Sku: "DUP-001"}
-    body, _ := json.Marshal(reqData)
+    body, _ := protojson.Marshal(reqData)  // ✅ Use protojson for protobuf (camelCase)
     req := httptest.NewRequest("POST", "/api/products", bytes.NewReader(body))
     rec := httptest.NewRecorder()
     
@@ -907,8 +948,9 @@ func TestProductAPI_Create_DuplicateSKU(t *testing.T) {
     }
     
     // Use error code definitions (NOT literal strings)
-    var errResp ErrorCode
-    json.NewDecoder(rec.Body).Decode(&errResp)
+    var errResp pb.ErrorResponse
+    respBody, _ := io.ReadAll(rec.Body)
+    protojson.Unmarshal(respBody, &errResp)  // ✅ Use protojson for error response too
     
     if errResp.Code != Errors.DuplicateSKU.Code {
         t.Errorf("Expected %s, got %s", Errors.DuplicateSKU.Code, errResp.Code)
@@ -939,6 +981,7 @@ func TestProductAPI_Create_DuplicateSKU(t *testing.T) {
 - **Database Access**: GORM (gorm.io/gorm with gorm.io/driver/postgres)
 - **Distributed Tracing**: OpenTracing (github.com/opentracing/opentracing-go)
 - **Protocol Buffers**: protoc compiler, protoc-gen-go, protoc-gen-go-grpc
+- **Protobuf JSON**: google.golang.org/protobuf/encoding/protojson (for camelCase JSON serialization)
 - **Testing**: Standard library `testing` package with `httptest`
 - **Test Comparison**: google/go-cmp with protocmp for protobuf message assertions
 - **Test Database**: testcontainers-go with PostgreSQL module (automatic Docker container management)
@@ -979,5 +1022,5 @@ All pull requests MUST be reviewed against these constitutional requirements:
 
 This constitution is version-controlled alongside code and follows the same review process as code changes.
 
-**Version**: 1.7.0 | **Ratified**: 2025-11-20 | **Last Amended**: 2025-12-04
+**Version**: 1.8.0 | **Ratified**: 2025-11-20 | **Last Amended**: 2025-12-06
 
