@@ -59,7 +59,8 @@ Calling `handler.Create(rec, req)` bypasses routing, middleware, and method matc
 All public API data structures MUST be defined in Protocol Buffers:
 - API contracts MUST be defined in `.proto` files (single source of truth)
 - Tests MUST use protobuf structs (NO `map[string]interface{}`)
-- Tests MUST compare using `cmp.Diff()` with `protocmp.Transform()` (NO `==`, `reflect.DeepEqual`, or individual field checks)
+- **CRITICAL**: Tests MUST compare protobuf messages using `cmp.Diff()` with `protocmp.Transform()` (NO `==`, `reflect.DeepEqual`, or individual field checks)
+- **AI Agent Requirement**: ALWAYS use `cmp.Diff(expected, got, protocmp.Transform())` for protobuf assertions. NEVER use individual field comparisons like `if resp.Field != expected`
 - **Expected values MUST be derived from TEST FIXTURES** (request data, database fixtures, config)
 - **Copy from response ONLY for truly random fields**: UUIDs, timestamps, crypto-rand tokens
 - **Copying non-random response fields defeats testing** (test always passes)
@@ -68,7 +69,7 @@ All public API data structures MUST be defined in Protocol Buffers:
 
 **Example**:
 ```go
-// ✅ CORRECT: Derive expected from fixtures
+// ✅ CORRECT: Use cmp.Diff with protocmp.Transform()
 expected := &pb.Product{
     Id:          response.Id,          // Random UUID (use response)
     Name:        "Test Product",       // From request fixture
@@ -77,6 +78,14 @@ expected := &pb.Product{
 }
 if diff := cmp.Diff(expected, &response, protocmp.Transform()); diff != "" {
     t.Errorf("Mismatch (-want +got):\n%s", diff)
+}
+
+// ❌ WRONG: Individual field comparisons
+if response.Name != "Test Product" {  // NEVER do this!
+    t.Errorf("Expected name Test Product, got %s", response.Name)
+}
+if !response.Valid {  // NEVER do this!
+    t.Errorf("Expected valid=true")
 }
 
 // ❌ WRONG: Copying non-random fields from response
@@ -341,16 +350,17 @@ func TestProductCreate(t *testing.T) {
     defer cleanup()
     defer truncateTables(db, "products")
     
+    // ✅ Use builder pattern for services and routes
     service := NewProductService(db).Build()
-    mux := SetupRoutes(service)  // ✅ Shared routes
+    mux := handlers.NewRouter(service, db).Build()  // ✅ Builder pattern for routes
     
+    // ✅ Use protobuf structs for request
     reqData := &pb.CreateProductRequest{Name: "Test Product", Sku: "TEST-001"}
-    body, _ := protojson.Marshal(reqData)  // ✅ Use protojson for protobuf (camelCase)
+    body, _ := protojson.Marshal(reqData)
     req := httptest.NewRequest("POST", "/api/products", bytes.NewReader(body))
     rec := httptest.NewRecorder()
     
-    mux.ServeHTTP(rec, req)  // ✅ CORRECT: Tests routing
-    // handler.Create(rec, req)  // ❌ WRONG: Bypasses routing!
+    mux.ServeHTTP(rec, req)  // ✅ Test through root mux
     
     if rec.Code != http.StatusCreated {
         t.Fatalf("Expected %d, got %d", http.StatusCreated, rec.Code)
@@ -358,17 +368,23 @@ func TestProductCreate(t *testing.T) {
     
     var response pb.Product
     respBody, _ := io.ReadAll(rec.Body)
-    protojson.Unmarshal(respBody, &response)  // ✅ Use protojson for protobuf
+    protojson.Unmarshal(respBody, &response)
     
+    // ✅ CORRECT: Build expected from fixtures, use cmp.Diff with protocmp
     expected := &pb.Product{
-        Id:   response.Id,    // Generated UUID
+        Id:   response.Id,    // Random UUID (copy from response)
         Name: reqData.Name,   // From request fixture
         Sku:  reqData.Sku,    // From request fixture
     }
     
+    // ✅ ALWAYS use cmp.Diff with protocmp.Transform() for protobuf comparison
     if diff := cmp.Diff(expected, &response, protocmp.Transform()); diff != "" {
         t.Errorf("Mismatch (-want +got):\n%s", diff)
     }
+    
+    // ❌ NEVER do individual field comparisons like this:
+    // if response.Name != "Test Product" { t.Errorf(...) }
+    // if !response.Valid { t.Errorf(...) }
 }
 ```
 
@@ -630,25 +646,99 @@ func (h *ProductHandler) Get(w http.ResponseWriter, r *http.Request) {
 ```
 
 
-**Routes Setup (Shared Between Production and Tests)**:
+**Routes Setup (Builder Pattern)**:
+
+All dependencies optional. Middlewares must be added explicitly via variadic `WithMiddlewares()`.
+
 ```go
-// SetupRoutes creates the HTTP router with all routes registered
-// CRITICAL: Production and tests MUST use the SAME routing configuration
-// This ensures tests validate actual routing behavior
-func SetupRoutes(service ProductService) http.Handler {
-    mux := http.NewServeMux()
-    handler := NewProductHandler(service)
-    
-    // Register routes using HTTP path patterns (Go 1.22+)
-    // Pattern includes method and path parameters for type-safe routing
-    mux.HandleFunc("POST /api/products", handler.Create)
-    mux.HandleFunc("GET /api/products/{id}", handler.Get)
-    mux.HandleFunc("PUT /api/products/{id}", handler.Update)
-    mux.HandleFunc("DELETE /api/products/{id}", handler.Delete)
-    
-    return mux
+// handlers/routes.go
+type Middleware func(http.Handler) http.Handler
+
+type routerBuilder struct {
+    mux              *http.ServeMux
+    workflowService  services.WorkflowService
+    activityService  services.ActivityService
+    executionService services.ExecutionService
+    triggerService   services.TriggerService
+    db               *gorm.DB
+    middlewares      []Middleware
 }
 
+func NewRouter(workflowService services.WorkflowService, db *gorm.DB) *routerBuilder {
+    return &routerBuilder{workflowService: workflowService, db: db}
+}
+
+func (b *routerBuilder) WithMux(mux *http.ServeMux) *routerBuilder {
+    b.mux = mux
+    return b
+}
+
+func (b *routerBuilder) WithActivityService(svc services.ActivityService) *routerBuilder {
+    b.activityService = svc
+    return b
+}
+
+func (b *routerBuilder) WithExecutionService(svc services.ExecutionService) *routerBuilder {
+    b.executionService = svc
+    return b
+}
+
+func (b *routerBuilder) WithTriggerService(svc services.TriggerService) *routerBuilder {
+    b.triggerService = svc
+    return b
+}
+
+func (b *routerBuilder) WithMiddlewares(mws ...Middleware) *routerBuilder {
+    b.middlewares = append(b.middlewares, mws...)
+    return b
+}
+
+func (b *routerBuilder) Build() http.Handler {
+    mux := b.mux
+    if mux == nil {
+        mux = http.NewServeMux()
+    }
+    
+    // Register routes only for non-nil services
+    if b.workflowService != nil {
+        h := NewWorkflowHandler(b.workflowService)
+        mux.HandleFunc("POST /api/v1/workflows", h.Create)
+        mux.HandleFunc("GET /api/v1/workflows/{id}", h.Get)
+        mux.HandleFunc("GET /api/v1/workflows", h.List)
+        // ... more routes
+    }
+    if b.activityService != nil {
+        h := NewActivityHandler(b.activityService)
+        mux.HandleFunc("GET /api/v1/activities", h.List)
+    }
+    // ... other optional services
+    
+    // Apply middlewares in order
+    var handler http.Handler = mux
+    for _, mw := range b.middlewares {
+        handler = mw(handler)
+    }
+    return handler
+}
+
+func DefaultMiddlewares() []Middleware {
+    return []Middleware{
+        recoveryMiddleware,
+        LoggingMiddleware(),
+        requestIDMiddleware,
+        CORSMiddleware(DefaultCORSConfig()),
+    }
+}
+
+// Usage: Tests (no middlewares needed)
+mux := handlers.NewRouter(workflowService, db).Build()
+
+// Usage: Production (explicit middlewares)
+handler := handlers.NewRouter(workflowService, db).
+    WithActivityService(activityService).
+    WithExecutionService(executionService).
+    WithMiddlewares(handlers.DefaultMiddlewares()...).
+    Build()
 ```
 
 
@@ -1022,5 +1112,5 @@ All pull requests MUST be reviewed against these constitutional requirements:
 
 This constitution is version-controlled alongside code and follows the same review process as code changes.
 
-**Version**: 1.8.0 | **Ratified**: 2025-11-20 | **Last Amended**: 2025-12-06
+**Version**: 1.10.0 | **Ratified**: 2025-11-20 | **Last Amended**: 2025-12-07
 
