@@ -219,6 +219,50 @@ func TestUserAcceptanceScenarios(t *testing.T) {
 
 **Critical**: NO implementation before tests. Run tests after EVERY code change (Principle VI).
 
+### Bug Fix Flow (Reproduction-First Debugging)
+
+When a bug is reported (e.g., via curl request/response, error logs, or user report), follow this systematic workflow:
+
+**Phase 1: Capture & Analyze**
+1. **Capture the failing request**: Save the exact curl command, request body, headers, and error response
+2. **Identify the endpoint**: Extract HTTP method, path, and path parameters
+3. **Extract test data**: Parse the JSON request body to create protobuf test fixtures (Principle V)
+4. **Document expected vs actual**: Note what the response should be vs what was returned
+
+**Phase 2: Reproduce with Integration Test**
+1. **Write a failing test FIRST** (Principle I: Integration Testing - NO mocking)
+2. **Test through root mux ServeHTTP** (Principle IV) - NOT individual handler methods
+3. **Use table-driven design** (Principle II) with descriptive name including bug reference (e.g., `"BUG-123: PUT workflow returns INVALID_REQUEST for valid branch step"`)
+4. **Use protobuf structs** (Principle V) for request/response - NO `map[string]interface{}`
+5. **Setup realistic fixtures** via GORM representing the bug's preconditions
+6. **Verify the test fails** with the same error as the reported bug
+
+**Phase 3: Root Cause Analysis** (Principle VII)
+1. **Trace backward**: Follow the call chain from error response to origin
+2. **Distinguish symptoms from causes**: The error message is a symptom, find the root cause
+3. **Use debugger/logging**: Add temporary logging to understand control flow
+4. **Form hypotheses**: List potential causes and systematically eliminate them
+5. **Document findings**: Record the root cause before implementing fix
+
+**Phase 4: Fix & Verify**
+1. **Fix at the source**: Address root cause, NOT symptoms (Principle VII)
+2. **Run the reproduction test**: Verify it now passes
+3. **Run full test suite**: Ensure no regressions (`go test -v -race ./...`) (Principle VI)
+4. **Update documentation**: If the bug revealed unclear API behavior, update docs
+
+
+**Test Naming Convention for Bug Fixes**:
+- Format: `"BUG-<ID>: <brief description of the bug>"`
+- Example: `"BUG-123: PUT workflow returns INVALID_REQUEST for valid branch step"`
+- Include bug ID in test case struct for traceability
+
+**AI Agent Requirements**:
+- AI agents MUST write a failing reproduction test BEFORE attempting any fix
+- AI agents MUST NOT skip the reproduction step even for "obvious" bugs
+- AI agents MUST verify the test fails with the reported error before proceeding
+- AI agents MUST apply Root Cause Tracing (Principle VII) - no superficial fixes
+- AI agents MUST run full test suite after fix to catch regressions (Principle VI)
+
 ### Protobuf Workflow
 
 1. **Define Schema**: Create or update `.proto` files in `api/` directory
@@ -1112,5 +1156,5 @@ All pull requests MUST be reviewed against these constitutional requirements:
 
 This constitution is version-controlled alongside code and follows the same review process as code changes.
 
-**Version**: 1.10.0 | **Ratified**: 2025-11-20 | **Last Amended**: 2025-12-07
+**Version**: 1.11.0 | **Ratified**: 2025-11-20 | **Last Amended**: 2025-12-08
 
