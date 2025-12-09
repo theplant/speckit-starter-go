@@ -673,7 +673,7 @@ func (h *ProductHandler) Get(w http.ResponseWriter, r *http.Request) {
     // Extract path parameter using r.PathValue() (Go 1.22+)
     id := r.PathValue("id")
     if id == "" {
-        http.Error(w, "Missing product ID", http.StatusBadRequest)
+        RespondWithError(w, Errors.MissingProductID)  // Principle XIII: Use error codes
         return
     }
     
@@ -976,15 +976,21 @@ type ErrorCode struct {
 }
 
 var Errors = struct {
-    MissingRequired ErrorCode
-    ProductNotFound ErrorCode
-    DuplicateSKU    ErrorCode
-    InternalError   ErrorCode
+    MissingRequired  ErrorCode
+    MissingProductID ErrorCode
+    ProductNotFound  ErrorCode
+    DuplicateSKU     ErrorCode
+    RequestCancelled ErrorCode
+    RequestTimeout   ErrorCode
+    InternalError    ErrorCode
 }{
-    MissingRequired: ErrorCode{"MISSING_REQUIRED", "Required field missing", 400, services.ErrMissingRequired},
-    ProductNotFound: ErrorCode{"PRODUCT_NOT_FOUND", "Product not found", 404, services.ErrProductNotFound},
-    DuplicateSKU:    ErrorCode{"DUPLICATE_SKU", "SKU already exists", 409, services.ErrDuplicateSKU},
-    InternalError:   ErrorCode{"INTERNAL_ERROR", "Internal server error", 500, nil},
+    MissingRequired:  ErrorCode{"MISSING_REQUIRED", "Required field missing", 400, services.ErrMissingRequired},
+    MissingProductID: ErrorCode{"MISSING_PRODUCT_ID", "Missing product ID", 400, nil},
+    ProductNotFound:  ErrorCode{"PRODUCT_NOT_FOUND", "Product not found", 404, services.ErrProductNotFound},
+    DuplicateSKU:     ErrorCode{"DUPLICATE_SKU", "SKU already exists", 409, services.ErrDuplicateSKU},
+    RequestCancelled: ErrorCode{"REQUEST_CANCELLED", "Request cancelled", 499, context.Canceled},
+    RequestTimeout:   ErrorCode{"REQUEST_TIMEOUT", "Request timeout", 504, context.DeadlineExceeded},
+    InternalError:    ErrorCode{"INTERNAL_ERROR", "Internal server error", 500, nil},
 }
 
 // RespondWithError sends error response using protobuf ErrorResponse
@@ -1031,17 +1037,7 @@ func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 // Automatically maps service errors to HTTP responses
 func HandleServiceError(w http.ResponseWriter, err error) {
-    // Check context errors first (Principle XII)
-    if errors.Is(err, context.Canceled) {
-        http.Error(w, "Request cancelled", 499)
-        return
-    }
-    if errors.Is(err, context.DeadlineExceeded) {
-        http.Error(w, "Request timeout", 504)
-        return
-    }
-    
-    // Check service error mapping
+    // Unified error mapping (includes context errors via ServiceErr field)
     for _, errCode := range AllErrors() {
         if errCode.ServiceErr != nil && errors.Is(err, errCode.ServiceErr) {
             RespondWithError(w, errCode)
