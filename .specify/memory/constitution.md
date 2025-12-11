@@ -652,18 +652,18 @@ func DecodeProtoJSON(r *http.Request, msg proto.Message) error {
 
 func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
     var req pb.CreateProductRequest
-    if err := DecodeProtoJSON(r, &req); err != nil {  // ✅ Use protojson (accepts camelCase)
-        RespondWithError(w, Errors.InvalidRequest)  // Principle XIII
+    if err := DecodeProtoJSON(r, &req); err != nil {
+        RespondWithError(w, Errors.InvalidRequest, err)  // Principle XIII: Pass error for details
         return
     }
     
     product, err := h.service.Create(r.Context(), &req)
     if err != nil {
-        HandleServiceError(w, err)  // Principle XIII: Automatic error mapping
+        HandleServiceError(w, err)  // Principle XIII: Automatic error mapping with details
         return
     }
     
-    RespondWithProto(w, http.StatusCreated, product)  // ✅ Use protojson (returns camelCase)
+    RespondWithProto(w, http.StatusCreated, product)
 }
 
 // Example handler using path parameter extraction
@@ -673,7 +673,7 @@ func (h *ProductHandler) Get(w http.ResponseWriter, r *http.Request) {
     // Extract path parameter using r.PathValue() (Go 1.22+)
     id := r.PathValue("id")
     if id == "" {
-        RespondWithError(w, Errors.MissingProductID)  // Principle XIII: Use error codes
+        RespondWithError(w, Errors.MissingProductID, nil)  // Principle XIII: Use error codes
         return
     }
     
@@ -818,21 +818,21 @@ func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
     span.SetTag("http.method", r.Method)
     
     var req pb.CreateProductRequest
-    if err := DecodeProtoJSON(r, &req); err != nil {  // ✅ Use protojson (accepts camelCase)
+    if err := DecodeProtoJSON(r, &req); err != nil {
         span.SetTag("error", true)
-        RespondWithError(w, Errors.InvalidRequest)
+        RespondWithError(w, Errors.InvalidRequest, err)  // Principle XIII: Pass error for details
         return
     }
     
     product, err := h.service.Create(r.Context(), &req)
     if err != nil {
         span.SetTag("error", true)
-        HandleServiceError(w, err)  // Principle XIII
+        HandleServiceError(w, err)  // Principle XIII: Automatic mapping with details
         return
     }
     
     span.SetTag("http.status_code", http.StatusCreated)
-    RespondWithProto(w, http.StatusCreated, product)  // ✅ Use protojson (returns camelCase)
+    RespondWithProto(w, http.StatusCreated, product)
 }
 
 // Service - child span
@@ -907,17 +907,17 @@ func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
     ctx := r.Context()  // Principle XII: Extract context
     
     var req pb.CreateProductRequest
-    if err := DecodeProtoJSON(r, &req); err != nil {  // ✅ Use protojson (accepts camelCase)
-        RespondWithError(w, Errors.InvalidRequest)
+    if err := DecodeProtoJSON(r, &req); err != nil {
+        RespondWithError(w, Errors.InvalidRequest, err)  // Principle XIII: Pass error for details
         return
     }
     
     product, err := h.service.Create(ctx, &req)  // Propagate context
     if err != nil {
-        HandleServiceError(w, err)  // Principle XIII: Handles context.Canceled automatically
+        HandleServiceError(w, err)  // Principle XIII: Handles context.Canceled with details
         return
     }
-    RespondWithProto(w, http.StatusCreated, product)  // ✅ Use protojson (returns camelCase)
+    RespondWithProto(w, http.StatusCreated, product)
 }
 
 // Long-running - check cancellation periodically
@@ -944,6 +944,7 @@ func (s *productService) BulkUpdate(ctx context.Context, updates []*pb.ProductUp
 **Two-Layer Strategy**:
 - **Service Layer**: Sentinel errors (package-level vars) with `fmt.Errorf("%w")` wrapping
 - **HTTP Layer**: Singleton error code struct with automatic service error mapping
+- **Environment-Aware Details**: Full error chain exposed in dev, hidden in production via `HIDE_ERROR_DETAILS=true`
 - **Testing**: ALL errors (sentinel + HTTP codes) MUST have test cases
 
 **Service Layer**:
@@ -963,6 +964,7 @@ var (
 message ErrorResponse {
     string code = 1;     // e.g., "PRODUCT_NOT_FOUND"
     string message = 2;  // e.g., "Product not found"
+    string details = 3;  // Full error chain (empty in production)
 }
 ```
 
@@ -993,12 +995,36 @@ var Errors = struct {
     InternalError:    ErrorCode{"INTERNAL_ERROR", "Internal server error", 500, nil},
 }
 
-// RespondWithError sends error response using protobuf ErrorResponse
-func RespondWithError(w http.ResponseWriter, errCode ErrorCode) {
+// Environment-aware error details configuration
+type errorResponseConfig struct {
+    hideErrorDetails bool
+}
+
+var defaultErrorConfig = &errorResponseConfig{hideErrorDetails: false}
+
+// SetHideErrorDetails configures whether to hide error details (call at startup)
+func SetHideErrorDetails(hide bool) {
+    defaultErrorConfig.hideErrorDetails = hide
+}
+
+// RespondWithError sends error response with optional details
+// In dev (default): includes full error chain in details field
+// In production (HIDE_ERROR_DETAILS=true): details field is empty
+func RespondWithError(w http.ResponseWriter, errCode ErrorCode, err error) {
     w.Header().Set("Content-Type", "application/json")
     w.WriteHeader(errCode.HTTPStatus)
-    errResp := &pb.ErrorResponse{Code: errCode.Code, Message: errCode.Message}
-    data, _ := protojson.Marshal(errResp)  // ✅ Use protojson for error responses too
+    
+    errResp := &pb.ErrorResponse{
+        Code:    errCode.Code,
+        Message: errCode.Message,
+    }
+    
+    // Include full error chain unless hidden (for frontend/AI debugging)
+    if !defaultErrorConfig.hideErrorDetails && err != nil {
+        errResp.Details = err.Error()
+    }
+    
+    data, _ := protojson.Marshal(errResp)
     w.Write(data)
 }
 ```
@@ -1022,29 +1048,67 @@ func (s *productService) Get(ctx context.Context, req *pb.GetProductRequest) (*p
 func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
     var req pb.CreateProductRequest
     if err := DecodeProtoJSON(r, &req); err != nil {  // ✅ Use protojson (accepts camelCase)
-        RespondWithError(w, Errors.InvalidRequest)
+        RespondWithError(w, Errors.InvalidRequest, err)  // Pass error for details
         return
     }
     
     product, err := h.service.Create(r.Context(), &req)
     if err != nil {
-        HandleServiceError(w, err)  // Automatic mapping!
+        HandleServiceError(w, err)  // Automatic mapping with details!
         return
     }
     
     RespondWithProto(w, http.StatusCreated, product)  // ✅ Use protojson (returns camelCase)
 }
 
-// Automatically maps service errors to HTTP responses
+// Automatically maps service errors to HTTP responses with details
 func HandleServiceError(w http.ResponseWriter, err error) {
-    // Unified error mapping (includes context errors via ServiceErr field)
+    // Check context errors first (Principle XII)
+    if errors.Is(err, context.Canceled) {
+        RespondWithError(w, Errors.RequestCanceled, err)
+        return
+    }
+    if errors.Is(err, context.DeadlineExceeded) {
+        RespondWithError(w, Errors.RequestTimeout, err)
+        return
+    }
+    
+    // Check service error mapping
     for _, errCode := range AllErrors() {
         if errCode.ServiceErr != nil && errors.Is(err, errCode.ServiceErr) {
-            RespondWithError(w, errCode)
+            RespondWithError(w, errCode, err)  // Pass original error for details
             return
         }
     }
-    RespondWithError(w, Errors.InternalError)
+    RespondWithError(w, Errors.InternalError, err)
+}
+```
+
+**Startup Configuration**:
+```go
+// cmd/api/main.go
+func main() {
+    // Set error details visibility from environment
+    if os.Getenv("HIDE_ERROR_DETAILS") == "true" {
+        handlers.SetHideErrorDetails(true)
+    }
+    // ... rest of setup
+}
+```
+
+**Example Responses**:
+```json
+// Development (default): full error chain visible for debugging
+{
+    "code": "PRODUCT_NOT_FOUND",
+    "message": "Product not found",
+    "details": "get product abc-123: product not found"
+}
+
+// Production (HIDE_ERROR_DETAILS=true): details hidden for security
+{
+    "code": "PRODUCT_NOT_FOUND",
+    "message": "Product not found"
 }
 ```
 
@@ -1101,6 +1165,12 @@ func TestProductAPI_Create_DuplicateSKU(t *testing.T) {
 - ✅ Wrapping creates error breadcrumb trail
 - ✅ ALL errors must be tested
 - ✅ Error assertions use definitions (maintainable, refactoring-safe)
+- ✅ Environment-aware details for debugging (dev) vs security (production)
+
+**AI Agent Requirements**:
+- AI agents MUST read the `details` field when debugging API errors
+- AI agents MUST NOT assume `details` is always present (production hides it)
+- AI agents SHOULD suggest setting `HIDE_ERROR_DETAILS=true` for production deployments
 
 
 ## Technology Stack
@@ -1152,5 +1222,5 @@ All pull requests MUST be reviewed against these constitutional requirements:
 
 This constitution is version-controlled alongside code and follows the same review process as code changes.
 
-**Version**: 1.11.0 | **Ratified**: 2025-11-20 | **Last Amended**: 2025-12-08
+**Version**: 1.12.0 | **Ratified**: 2025-11-20 | **Last Amended**: 2025-12-11
 

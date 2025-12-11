@@ -58,9 +58,12 @@
 - [ ] **Tests**: MUST verify context cancellation behavior
 
 ### Error Handling Strategy (XIII)
-- [ ] **XIII. Comprehensive Error Handling**: Two-layer strategy (service + HTTP)
+- [ ] **XIII. Comprehensive Error Handling**: Two-layer strategy (service + HTTP) with environment-aware details
 - [ ] **Service Layer**: Sentinel errors (package-level vars in `services/errors.go`) with `fmt.Errorf("%w")` wrapping for breadcrumb trail
 - [ ] **HTTP Layer**: Singleton error code struct in `handlers/error_codes.go` with `ServiceErr` field for automatic mapping via `HandleServiceError()`
+- [ ] **Environment-Aware Details**: ErrorResponse includes `details` field with full error chain by default; hidden when `HIDE_ERROR_DETAILS=true`
+- [ ] **RespondWithError Signature**: `RespondWithError(w, errCode, err)` - always pass original error for details
+- [ ] **Startup Config**: Call `handlers.SetHideErrorDetails(true)` in `main.go` when env var set
 - [ ] **Testing**: ALL errors (sentinel + HTTP codes) MUST have test cases
 - [ ] **Error Assertions**: Tests use error code definitions (NOT literal strings)
 - [ ] **Context Errors**: `HandleServiceError()` checks `context.Canceled` and `context.DeadlineExceeded` first
