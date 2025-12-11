@@ -441,6 +441,8 @@ func TestProductCreate(t *testing.T) {
 - Business logic MUST be Go interfaces (service layer)
 - Services MUST NOT depend on HTTP types (only `context.Context` allowed)
 - Handlers MUST be thin wrappers delegating to services
+- **ALL validation MUST be in services** (handlers MUST NOT validate input, including empty/nil checks)
+- Handlers MUST ONLY: decode request body, extract path parameters, call service, write response
 - Services and handlers MUST be in public packages (NOT `internal/`) for reusability
 - External dependencies MUST be injected via builder pattern
 - Services MUST use builder pattern: `NewService(db).WithLogger(log).Build()`
@@ -667,17 +669,14 @@ func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
 }
 
 // Example handler using path parameter extraction
+// ✅ Handler is thin wrapper: extract params, call service, write response
+// ✅ NO validation in handler - service validates req.Id
 func (h *ProductHandler) Get(w http.ResponseWriter, r *http.Request) {
     ctx := r.Context()
-    
-    // Extract path parameter using r.PathValue() (Go 1.22+)
-    id := r.PathValue("id")
-    if id == "" {
-        RespondWithError(w, Errors.MissingProductID, nil)  // Principle XIII: Use error codes
-        return
-    }
+    id := r.PathValue("id")  // Extract path parameter (Go 1.22+)
     
     // Principle X: Service methods MUST use protobuf structs (NOT primitives)
+    // Principle X: Service validates req.Id (handler does NOT check if empty)
     product, err := h.service.Get(ctx, &pb.GetProductRequest{Id: id})
     if err != nil {
         HandleServiceError(w, err)  // Principle XIII: Use error mapping
@@ -979,7 +978,6 @@ type ErrorCode struct {
 
 var Errors = struct {
     MissingRequired  ErrorCode
-    MissingProductID ErrorCode
     ProductNotFound  ErrorCode
     DuplicateSKU     ErrorCode
     RequestCancelled ErrorCode
@@ -987,7 +985,6 @@ var Errors = struct {
     InternalError    ErrorCode
 }{
     MissingRequired:  ErrorCode{"MISSING_REQUIRED", "Required field missing", 400, services.ErrMissingRequired},
-    MissingProductID: ErrorCode{"MISSING_PRODUCT_ID", "Missing product ID", 400, nil},
     ProductNotFound:  ErrorCode{"PRODUCT_NOT_FOUND", "Product not found", 404, services.ErrProductNotFound},
     DuplicateSKU:     ErrorCode{"DUPLICATE_SKU", "SKU already exists", 409, services.ErrDuplicateSKU},
     RequestCancelled: ErrorCode{"REQUEST_CANCELLED", "Request cancelled", 499, context.Canceled},
@@ -1029,9 +1026,15 @@ func RespondWithError(w http.ResponseWriter, errCode ErrorCode, err error) {
 }
 ```
 
-**Service - Wrap Errors**:
+**Service - Validation and Error Wrapping**:
 ```go
+// ✅ Service validates ALL input (Principle X: handlers MUST NOT validate)
 func (s *productService) Get(ctx context.Context, req *pb.GetProductRequest) (*pb.Product, error) {
+    // Principle X: ALL validation in service (handler just extracts path param)
+    if req.Id == "" {
+        return nil, fmt.Errorf("product id: %w", ErrMissingRequired)
+    }
+    
     var product Product
     if err := s.db.WithContext(ctx).First(&product, "id = ?", req.Id).Error; err != nil {
         if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -1222,5 +1225,5 @@ All pull requests MUST be reviewed against these constitutional requirements:
 
 This constitution is version-controlled alongside code and follows the same review process as code changes.
 
-**Version**: 1.12.0 | **Ratified**: 2025-11-20 | **Last Amended**: 2025-12-11
+**Version**: 1.13.0 | **Ratified**: 2025-11-20 | **Last Amended**: 2025-12-11
 
