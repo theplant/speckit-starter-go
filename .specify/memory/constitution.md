@@ -14,6 +14,9 @@ This constitution defines the core principles and governance for Go microservice
 - Implementation code MUST NEVER contain mocks or mock interfaces
 - Dependencies requiring testability MUST be injected via interfaces using builder pattern (Principle X)
 - Test code MUST NOT call `internal/` packages for setup - dependencies MUST be injected via service constructors
+- **Exception (models-only fixtures)**: `testutil/` and fixture helpers MAY import `internal/models` strictly for inserting realistic database fixtures via GORM.
+  - This exception applies ONLY to `internal/models` (NOT `internal/config`, NOT `internal/*` broadly)
+  - Tests MUST still exercise behavior through public services/handlers (fixtures are setup only)
 - Test setup MUST use public APIs and dependency injection (NOT direct internal package imports)
 - Mocking is ONLY permitted in test code when testing interactions with external systems (third-party APIs, message queues)
 - Mock implementations MUST be defined in `*_test.go` files (NEVER in production code files)
