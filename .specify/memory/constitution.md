@@ -316,24 +316,24 @@ import (
     "net/http"
     "net/http/httptest"
     "testing"
-    
+
     "github.com/google/go-cmp/cmp"
     "google.golang.org/protobuf/encoding/protojson"
     "google.golang.org/protobuf/testing/protocmp"
     "gorm.io/driver/postgres"
     "gorm.io/gorm"
-    
+
     "github.com/testcontainers/testcontainers-go"
     "github.com/testcontainers/testcontainers-go/modules/postgres"
     "github.com/testcontainers/testcontainers-go/wait"
-    
+
     pb "yourapp/api/gen/pim/v1"  // Protobuf generated types
 )
 
 // Setup PostgreSQL test container using testcontainers
 func setupTestDB(t *testing.T) (*gorm.DB, func()) {
     ctx := context.Background()
-    
+
     // Create PostgreSQL container
     pgContainer, err := postgres.RunContainer(ctx,
         testcontainers.WithImage("postgres:15-alpine"),
@@ -348,35 +348,35 @@ func setupTestDB(t *testing.T) (*gorm.DB, func()) {
     if err != nil {
         t.Fatalf("Failed to start PostgreSQL container: %v", err)
     }
-    
+
     // Cleanup function
     cleanup := func() {
         if err := pgContainer.Terminate(ctx); err != nil {
             t.Logf("Failed to terminate container: %v", err)
         }
     }
-    
+
     // Get connection string
     connStr, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
     if err != nil {
         cleanup()
         t.Fatalf("Failed to get connection string: %v", err)
     }
-    
+
     // Connect using GORM
     db, err := gorm.Open(postgres.Open(connStr), &gorm.Config{})
     if err != nil {
         cleanup()
         t.Fatalf("Failed to connect to database: %v", err)
     }
-    
+
     // Run GORM AutoMigrate with internal models
     // Note: Use your actual internal models here
     if err := db.AutoMigrate(&Product{} /* add other models */); err != nil {
         cleanup()
         t.Fatalf("Failed to run migrations: %v", err)
     }
-    
+
     return db, cleanup
 }
 
@@ -393,39 +393,39 @@ func TestProductCreate(t *testing.T) {
     db, cleanup := setupTestDB(t)
     defer cleanup()
     defer truncateTables(db, "products")
-    
+
     // ✅ Use builder pattern for services and routes
     service := NewProductService(db).Build()
     mux := handlers.NewRouter(service, db).Build()  // ✅ Builder pattern for routes
-    
+
     // ✅ Use protobuf structs for request
     reqData := &pb.CreateProductRequest{Name: "Test Product", Sku: "TEST-001"}
     body, _ := protojson.Marshal(reqData)
     req := httptest.NewRequest("POST", "/api/products", bytes.NewReader(body))
     rec := httptest.NewRecorder()
-    
+
     mux.ServeHTTP(rec, req)  // ✅ Test through root mux
-    
+
     if rec.Code != http.StatusCreated {
         t.Fatalf("Expected %d, got %d", http.StatusCreated, rec.Code)
     }
-    
+
     var response pb.Product
     respBody, _ := io.ReadAll(rec.Body)
     protojson.Unmarshal(respBody, &response)
-    
+
     // ✅ CORRECT: Build expected from fixtures, use cmp.Diff with protocmp
     expected := &pb.Product{
         Id:   response.Id,    // Random UUID (copy from response)
         Name: reqData.Name,   // From request fixture
         Sku:  reqData.Sku,    // From request fixture
     }
-    
+
     // ✅ ALWAYS use cmp.Diff with protocmp.Transform() for protobuf comparison
     if diff := cmp.Diff(expected, &response, protocmp.Transform()); diff != "" {
         t.Errorf("Mismatch (-want +got):\n%s", diff)
     }
-    
+
     // ❌ NEVER do individual field comparisons like this:
     // if response.Name != "Test Product" { t.Errorf(...) }
     // if !response.Valid { t.Errorf(...) }
@@ -588,9 +588,9 @@ func (s *productService) Create(ctx context.Context, req *pb.CreateProductReques
     if req.Name == "" {
         return nil, fmt.Errorf("product name: %w", ErrMissingRequired)
     }
-    
+
     product := &Product{Name: req.Name, SKU: req.Sku}
-    
+
     // Principle XII: Use context-aware database operations
     if err := s.db.WithContext(ctx).Create(product).Error; err != nil {
         // Principle XIII: Wrap errors with context
@@ -599,7 +599,7 @@ func (s *productService) Create(ctx context.Context, req *pb.CreateProductReques
         }
         return nil, fmt.Errorf("create product: %w", err)
     }
-    
+
     // Principle V: Return protobuf type
     return &pb.Product{Id: product.ID, Name: product.Name, Sku: product.SKU}, nil
 }
@@ -656,34 +656,34 @@ func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
         RespondWithError(w, Errors.InvalidRequest)  // Principle XIII
         return
     }
-    
+
     product, err := h.service.Create(r.Context(), &req)
     if err != nil {
         HandleServiceError(w, err)  // Principle XIII: Automatic error mapping
         return
     }
-    
+
     RespondWithProto(w, http.StatusCreated, product)  // ✅ Use protojson (returns camelCase)
 }
 
 // Example handler using path parameter extraction
 func (h *ProductHandler) Get(w http.ResponseWriter, r *http.Request) {
     ctx := r.Context()
-    
+
     // Extract path parameter using r.PathValue() (Go 1.22+)
     id := r.PathValue("id")
     if id == "" {
         http.Error(w, "Missing product ID", http.StatusBadRequest)
         return
     }
-    
+
     // Principle X: Service methods MUST use protobuf structs (NOT primitives)
     product, err := h.service.Get(ctx, &pb.GetProductRequest{Id: id})
     if err != nil {
         HandleServiceError(w, err)  // Principle XIII: Use error mapping
         return
     }
-    
+
     RespondWithProto(w, http.StatusOK, product)  // ✅ Use protojson (returns camelCase)
 }
 
@@ -742,7 +742,7 @@ func (b *routerBuilder) Build() http.Handler {
     if mux == nil {
         mux = http.NewServeMux()
     }
-    
+
     // Register routes only for non-nil services
     if b.workflowService != nil {
         h := NewWorkflowHandler(b.workflowService)
@@ -756,7 +756,7 @@ func (b *routerBuilder) Build() http.Handler {
         mux.HandleFunc("GET /api/v1/activities", h.List)
     }
     // ... other optional services
-    
+
     // Apply middlewares in order
     var handler http.Handler = mux
     for _, mw := range b.middlewares {
@@ -816,21 +816,21 @@ func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
     span := opentracing.StartSpan("POST /api/products")
     defer span.Finish()
     span.SetTag("http.method", r.Method)
-    
+
     var req pb.CreateProductRequest
     if err := DecodeProtoJSON(r, &req); err != nil {  // ✅ Use protojson (accepts camelCase)
         span.SetTag("error", true)
         RespondWithError(w, Errors.InvalidRequest)
         return
     }
-    
+
     product, err := h.service.Create(r.Context(), &req)
     if err != nil {
         span.SetTag("error", true)
         HandleServiceError(w, err)  // Principle XIII
         return
     }
-    
+
     span.SetTag("http.status_code", http.StatusCreated)
     RespondWithProto(w, http.StatusCreated, product)  // ✅ Use protojson (returns camelCase)
 }
@@ -839,13 +839,13 @@ func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
 func (s *productService) Create(ctx context.Context, req *pb.CreateProductRequest) (*pb.Product, error) {
     span, ctx := opentracing.StartSpanFromContext(ctx, "ProductService.Create")
     defer span.Finish()
-    
+
     product := &Product{Name: req.Name, SKU: req.Sku}
     if err := s.db.WithContext(ctx).Create(product).Error; err != nil {  // Principle XII
         span.SetTag("error", true)
         return nil, err
     }
-    
+
     return toProto(product), nil
 }
 ```
@@ -879,39 +879,39 @@ func (s *productService) Create(ctx context.Context, req *pb.CreateProductReques
         return nil, ctx.Err()
     default:
     }
-    
+
     // Principle XIII: Validate and return sentinel errors
     if req.Name == "" {
         return nil, fmt.Errorf("product name: %w", ErrMissingRequired)
     }
-    
+
     // Principle XII: Use context-aware database operations
     tx := s.db.WithContext(ctx).Begin()
     defer tx.Rollback()
-    
+
     product := &Product{Name: req.Name, SKU: req.Sku}
     if err := tx.Create(product).Error; err != nil {
         // Principle XIII: Wrap errors with context
         return nil, fmt.Errorf("create product: %w", err)
     }
-    
+
     if err := tx.Commit().Error; err != nil {
         return nil, fmt.Errorf("commit transaction: %w", err)
     }
-    
+
     return toProto(product), nil
 }
 
 // HTTP Handler - extract context
 func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
     ctx := r.Context()  // Principle XII: Extract context
-    
+
     var req pb.CreateProductRequest
     if err := DecodeProtoJSON(r, &req); err != nil {  // ✅ Use protojson (accepts camelCase)
         RespondWithError(w, Errors.InvalidRequest)
         return
     }
-    
+
     product, err := h.service.Create(ctx, &req)  // Propagate context
     if err != nil {
         HandleServiceError(w, err)  // Principle XIII: Handles context.Canceled automatically
@@ -1019,13 +1019,13 @@ func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
         RespondWithError(w, Errors.InvalidRequest)
         return
     }
-    
+
     product, err := h.service.Create(r.Context(), &req)
     if err != nil {
         HandleServiceError(w, err)  // Automatic mapping!
         return
     }
-    
+
     RespondWithProto(w, http.StatusCreated, product)  // ✅ Use protojson (returns camelCase)
 }
 
@@ -1040,7 +1040,7 @@ func HandleServiceError(w http.ResponseWriter, err error) {
         http.Error(w, "Request timeout", 504)
         return
     }
-    
+
     // Check service error mapping
     for _, errCode := range AllErrors() {
         if errCode.ServiceErr != nil && errors.Is(err, errCode.ServiceErr) {
@@ -1059,33 +1059,33 @@ func TestProductAPI_Create_DuplicateSKU(t *testing.T) {
     db, cleanup := setupTestDB(t)
     defer cleanup()
     defer truncateTables(db, "products")
-    
+
     // Principle I: Create real database fixture
     createTestProduct(db, map[string]interface{}{"name": "Existing", "sku": "DUP-001"})
-    
+
     // Principle X: Use builder pattern
     service := NewProductService(db).Build()
     mux := SetupRoutes(service)
-    
+
     // Principle V: Use protobuf structs
     reqData := &pb.CreateProductRequest{Name: "New Product", Sku: "DUP-001"}
     body, _ := protojson.Marshal(reqData)  // ✅ Use protojson for protobuf (camelCase)
     req := httptest.NewRequest("POST", "/api/products", bytes.NewReader(body))
     rec := httptest.NewRecorder()
-    
+
     // Principle IV: Test through root mux ServeHTTP
     mux.ServeHTTP(rec, req)
-    
+
     // Verify HTTP status
     if rec.Code != http.StatusConflict {
         t.Errorf("Expected 409, got %d", rec.Code)
     }
-    
+
     // Use error code definitions (NOT literal strings)
     var errResp pb.ErrorResponse
     respBody, _ := io.ReadAll(rec.Body)
     protojson.Unmarshal(respBody, &errResp)  // ✅ Use protojson for error response too
-    
+
     if errResp.Code != Errors.DuplicateSKU.Code {
         t.Errorf("Expected %s, got %s", Errors.DuplicateSKU.Code, errResp.Code)
     }
@@ -1123,6 +1123,40 @@ func TestProductAPI_Create_DuplicateSKU(t *testing.T) {
 
 
 
+## Documentation & Specification Writing
+
+### XIV. Plain English Writing Style
+
+All specifications, documentation, and user-facing text MUST use plain English:
+
+**Requirements**:
+- Use simple, everyday words instead of jargon or technical terms
+- Write short sentences (under 20 words when possible)
+- Avoid abstract phrases like "authoring experience", "downstream systems", "backward compatibility"
+- Replace vague terms with concrete examples
+- User stories must clearly state WHO does WHAT and WHY in simple terms
+
+**Examples**:
+
+| ❌ Avoid | ✅ Use Instead |
+|----------|----------------|
+| "enforce consistent validation across products" | "all products follow the same rules" |
+| "maintain backward compatibility" | "existing products keep their old values" |
+| "downstream system protection" | "Search and OMS always get valid data" |
+| "improve authoring without blocking existing data" | "improve the form without breaking existing products" |
+| "schema-first product structure" | "define fields once, reuse everywhere" |
+| "participate in search/filter logic" | "show up in search results and filters" |
+
+**AI Agent Requirements**:
+- When generating specs, use plain English throughout
+- Avoid technical jargon unless defining a specific term
+- Test readability: if a non-technical person can't understand it, rewrite it
+- User story outcomes should be concrete and measurable
+
+**Rationale**: Plain English ensures specifications are understood by all stakeholders (developers, product managers, business users). Jargon creates barriers and leads to misunderstandings.
+
+---
+
 ## Code Review Requirements
 
 All pull requests MUST be reviewed against these constitutional requirements:
@@ -1156,5 +1190,5 @@ All pull requests MUST be reviewed against these constitutional requirements:
 
 This constitution is version-controlled alongside code and follows the same review process as code changes.
 
-**Version**: 1.11.0 | **Ratified**: 2025-11-20 | **Last Amended**: 2025-12-08
+**Version**: 1.12.0 | **Ratified**: 2025-11-20 | **Last Amended**: 2025-12-15
 
