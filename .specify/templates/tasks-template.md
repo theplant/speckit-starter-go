@@ -19,9 +19,10 @@ description: "Task list template for feature implementation"
 
 ## Go Project Structure
 
-- **OpenAPI**: `api/openapi/` (SINGLE SOURCE OF TRUTH for API contracts)
-- **Protobuf**: `api/proto/v1/` (GENERATED from OpenAPI - DO NOT HAND-EDIT), `api/gen/v1/` (generated Go code)
-- **Services**: `services/` (PUBLIC - business logic, returns protobuf)
+- **OpenAPI**: `api/openapi/` (API contract definitions - YAML preferred)
+- **Generated Code**: `api/gen/<domain>/` (generated Go types and server interfaces)
+- **Protobuf** (optional): `api/proto/<domain>/v1/` (for gRPC or cross-language APIs)
+- **Services**: `services/` (PUBLIC - business logic, returns generated types)
 - **Handlers**: `handlers/` (PUBLIC - HTTP layer with `*_test.go`, includes `helpers.go`, `middleware.go`, `routes.go`)
 - **Models**: `internal/models/` (GORM - internal only)
 - **Fixtures**: `testutil/` (helpers and fixtures - MAY import `internal/models` for fixtures)
@@ -49,7 +50,7 @@ description: "Task list template for feature implementation"
 
 - [ ] T001 Initialize Go module with Go 1.25+
 - [ ] T002 [P] Setup `api/openapi/`, `api/proto/v1/`, and `api/gen/v1/`
-- [ ] T003 [P] Configure `openapi2proto` and `protoc` with `protoc-gen-go`, `protoc-gen-go-grpc`
+- [ ] T003 [P] Configure `oapi-codegen` (or `protoc` for Protobuf approach)
 - [ ] T004 [P] Setup `services/`, `handlers/`, `internal/models/`, `testutil/`, `cmd/api/`
 
 ---
@@ -70,10 +71,10 @@ description: "Task list template for feature implementation"
 **Goal**: [Brief description]  
 **Acceptance Scenarios**: US1-AS1, US1-AS2
 
-### Step 1: OpenAPI → Protobuf (Design) 📝
+### Step 1: API Contract & Code Generation (Design) 📝
 
-- [ ] T030 [P] [US1] Define API contract in `api/openapi/[domain].json` with `x-proto-tag` for field numbers
-- [ ] T031 [US1] Generate `.proto` via `openapi2proto`, run `protoc`, commit generated code (NEVER hand-edit .proto)
+- [ ] T030 [P] [US1] Define API contract in `api/openapi/[domain].yaml` (or `.proto` for Protobuf approach)
+- [ ] T031 [US1] Generate Go code via `oapi-codegen` (or `protoc` for Protobuf), commit generated code
 
 ### Step 2: Tests (Red) 🔴
 
@@ -174,17 +175,18 @@ description: "Task list template for feature implementation"
 - Story complete ONLY when all tests pass
 
 **Code Organization**:
-- Services/handlers: PUBLIC packages (return protobuf)
+- Services/handlers: PUBLIC packages (return generated types)
 - Models: `internal/models/` (GORM, internal only)
-- OpenAPI: `api/openapi/` (SINGLE SOURCE OF TRUTH)
-- Protobuf: `api/proto/v1/` (GENERATED from OpenAPI - DO NOT HAND-EDIT), `api/gen/v1/` (generated Go code)
+- OpenAPI: `api/openapi/` (API contract definitions)
+- Generated: `api/gen/<domain>/` (generated Go types and server interfaces)
+- Protobuf (optional): `api/proto/<domain>/v1/` (for gRPC or cross-language APIs)
 
 **Testing Requirements** (Constitution Principles I-IX):
 - **I. Integration Testing**: Real PostgreSQL via testcontainers (NO mocking in implementation code). Mocking ONLY in test code (`*_test.go`) for external systems with justification. Test setup uses public APIs and dependency injection (NOT direct `internal/` package imports). Exception: `testutil/` MAY import `internal/models` strictly for fixtures.
 - **II. Table-Driven Design**: Test cases as slices of structs with descriptive `name` fields, execute using `t.Run(testCase.name, func(t *testing.T) {...})`
 - **III. Edge Cases MANDATORY**: Input validation (empty/nil, invalid formats, SQL injection, XSS), boundaries (zero/negative/max), auth (missing/expired/invalid tokens), data state (404s, conflicts), database (constraint violations, foreign key failures), HTTP (wrong methods, missing headers, invalid content-types, malformed JSON)
 - **IV. ServeHTTP Testing**: Call root mux ServeHTTP (NOT individual handlers) using `httptest.ResponseRecorder`, identical routing configuration from shared routes package, `r.PathValue()` for parameters
-- **V. Protobuf Structs (Generated from OpenAPI)**: API contracts in OpenAPI (single source of truth), `.proto` generated via `openapi2proto` (NEVER hand-edit), stabilize field numbers via `x-proto-tag`. Use `cmp.Diff()` with `protocmp.Transform()`. Derive expected from TEST FIXTURES (request data, database fixtures, config). Copy from response ONLY for truly random: UUIDs, timestamps, crypto-rand tokens. Read `testutil/fixtures.go` for defaults before writing assertions.
+- **V. API Data Structures (Schema-First Design)**: Choose ONE approach: (A) OpenAPI with `oapi-codegen` - generate Go types and `StrictServerInterface`, (B) Protobuf - generate via `protoc`, use `protocmp.Transform()`, (C) Hybrid - OpenAPI → Protobuf via `openapi2proto`. Use `cmp.Diff()` for comparisons. Derive expected from TEST FIXTURES. Copy from response ONLY for truly random: UUIDs, timestamps, crypto-rand tokens.
 - **VI. Continuous Test Verification**: Run `go test -v ./...` and `go test -v -race ./...` after EVERY change. Fix failures immediately (NO skipping/disabling tests).
 - **VII. Root Cause Tracing**: Trace backward through call chain, fix source NOT symptoms, NEVER remove/weaken tests
 - **VIII. Acceptance Scenario Coverage**: Every US#-AS# has corresponding test with scenario ID in test case name

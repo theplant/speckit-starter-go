@@ -1,3 +1,34 @@
+<!--
+## Sync Impact Report
+
+**Version Change**: 2.0.0 → 2.1.0 (MINOR)
+**Bump Rationale**: Added oapi-codegen as alternative to Protobuf for OpenAPI → Go code generation. This is a MINOR change as it adds new capability without removing existing Protobuf support.
+
+**Modified Principles**:
+- V. "Protobuf Data Structures (Generated from OpenAPI)" → "API Data Structures (Schema-First Design)" - Now supports both OpenAPI/oapi-codegen and Protobuf approaches
+
+**Added Sections**:
+- Option A: OpenAPI with oapi-codegen (Recommended for REST APIs)
+- Option B: Protobuf (Recommended for gRPC or Cross-Language APIs)
+- Hybrid Approach: OpenAPI → Protobuf (Optional)
+- OpenAPI with oapi-codegen Workflow
+- Protobuf Workflow
+- Hybrid Workflow: OpenAPI → Protobuf
+
+**Removed Sections**:
+- "OpenAPI → Protobuf Workflow" (replaced with three separate workflow sections)
+- "OpenAPI Contract Workflow (OpenAPI → Protobuf Types)" (merged into new workflow sections)
+
+**Templates Requiring Updates**:
+- ✅ plan-template.md - References Principle V, needs update for dual approach
+- ✅ spec-template.md - References Principle V, needs update for dual approach  
+- ✅ tasks-template.md - References OpenAPI → Protobuf workflow, needs update
+
+**Follow-up TODOs**:
+- Update plan-template.md to reference both OpenAPI and Protobuf approaches
+- Update spec-template.md to reference both approaches
+- Update tasks-template.md to reference both approaches
+-->
 
 # Go Project Constitution
 
@@ -57,22 +88,96 @@ API endpoints MUST be tested via ServeHTTP interface:
 **Why Root Mux (Not Individual Handlers)**:
 Calling `handler.Create(rec, req)` bypasses routing, middleware, and method matching. Tests pass even with broken route registration (e.g., typo in path). Calling `mux.ServeHTTP(rec, req)` tests the complete stack and catches routing bugs before production.
 
-### V. Protobuf Data Structures (Generated from OpenAPI)
+### V. API Data Structures (Schema-First Design)
 
-All public API data structures MUST be represented using Protocol Buffers, generated from OpenAPI:
+All public API data structures MUST use typed structs generated from API specifications. This project supports **two approaches**:
+
+#### Option A: OpenAPI with oapi-codegen (Recommended for REST APIs)
+
+Generate Go types and server interfaces directly from OpenAPI specifications:
 - API contracts MUST be defined in OpenAPI specifications (single source of truth)
-- `.proto` files MUST be generated from OpenAPI and MUST NOT be hand-edited
-- Protobuf field numbers MUST be stabilized via OpenAPI `x-proto-tag` (never reuse deleted field numbers)
+- Go code MUST be generated using `oapi-codegen` (github.com/oapi-codegen/oapi-codegen)
+- Generated types provide native Go structs with JSON tags
+- Use "strict server" mode for type-safe request/response handling
+- **CRITICAL**: Services MUST NOT define their own interfaces. Instead, implement the generated `StrictServerInterface` directly
+- Business logic handlers implement `StrictServerInterface` - this IS the service layer for OpenAPI projects
+- Tests MUST use generated structs (NO `map[string]interface{}`)
+- **CRITICAL**: Tests MUST compare structs using `cmp.Diff()` (NO `==`, `reflect.DeepEqual`, or individual field checks)
+
+**oapi-codegen Workflow**:
+1. Define API contract in `api/openapi/<domain>.yaml` or `api/openapi/<domain>.json`
+2. Generate Go code: `oapi-codegen --config=oapi-codegen.yaml api/openapi/<domain>.yaml`
+3. Implement the generated `StrictServerInterface` directly (NO separate service interface)
+4. Use generated types in handlers and tests
+
+**oapi-codegen Configuration** (`oapi-codegen.yaml`):
+```yaml
+package: api
+generate:
+  strict-server: true
+  models: true
+  embedded-spec: true
+output: api/gen/<domain>/api.gen.go
+```
+
+**go:generate example**:
+```go
+//go:generate go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen --config=oapi-codegen.yaml ../../openapi/<domain>.yaml
+```
+
+#### Option B: Protobuf (Recommended for gRPC or Cross-Language APIs)
+
+Generate Go types from Protocol Buffer definitions:
+- `.proto` files define the API contract (single source of truth)
+- Protobuf field numbers MUST be stabilized (never reuse deleted field numbers)
 - Tests MUST use protobuf structs (NO `map[string]interface{}`)
-- **CRITICAL**: Tests MUST compare protobuf messages using `cmp.Diff()` with `protocmp.Transform()` (NO `==`, `reflect.DeepEqual`, or individual field checks)
-- **AI Agent Requirement**: ALWAYS use `cmp.Diff(expected, got, protocmp.Transform())` for protobuf assertions. NEVER use individual field comparisons like `if resp.Field != expected`
+- **CRITICAL**: Tests MUST compare protobuf messages using `cmp.Diff()` with `protocmp.Transform()`
+- Use `protojson` for JSON serialization (camelCase)
+
+**Protobuf Workflow**:
+1. Define messages in `api/proto/<domain>/v1/<domain>.proto`
+2. Generate Go code: `protoc --go_out=. --go_opt=paths=source_relative api/proto/<domain>/v1/<domain>.proto`
+3. Use generated types in services and handlers
+4. Serialize with `protojson.Marshal()` / `protojson.Unmarshal()`
+
+#### Hybrid Approach: OpenAPI → Protobuf (Optional)
+
+For projects needing both REST and gRPC, generate Protobuf from OpenAPI:
+- API contracts MUST be defined in OpenAPI specifications (single source of truth)
+- `.proto` files MUST be generated from OpenAPI via `openapi2proto` and MUST NOT be hand-edited
+- Protobuf field numbers MUST be stabilized via OpenAPI `x-proto-tag`
+
+#### Common Requirements (Both Approaches)
+
+- Tests MUST use generated structs (NO `map[string]interface{}`)
+- **CRITICAL**: Tests MUST compare using `cmp.Diff()` (with `protocmp.Transform()` for protobuf)
+- **AI Agent Requirement**: ALWAYS use `cmp.Diff()` for struct assertions. NEVER use individual field comparisons like `if resp.Field != expected`
 - **Expected values MUST be derived from TEST FIXTURES** (request data, database fixtures, config)
 - **Copy from response ONLY for truly random fields**: UUIDs, timestamps, crypto-rand tokens
 - **Copying non-random response fields defeats testing** (test always passes)
 
-**Rationale**: Protobuf provides type safety and schema-first design. Protocmp ensures complete message validation. Deriving expected values from fixtures (not responses) ensures tests actually validate correctness.
+**Rationale**: Schema-first design provides type safety and ensures API contracts are the source of truth. Generated types eliminate manual struct maintenance and reduce bugs. `cmp.Diff()` ensures complete struct validation.
 
-**Example**:
+**Example (OpenAPI with oapi-codegen)**:
+```go
+// ✅ CORRECT: Use cmp.Diff for struct comparison
+expected := api.Product{
+    Id:          response.Id,          // Random UUID (use response)
+    Name:        "Test Product",       // From request fixture
+    CategoryId:  category.ID,          // From database fixture
+    CreatedAt:   response.CreatedAt,   // Timestamp (use response)
+}
+if diff := cmp.Diff(expected, response); diff != "" {
+    t.Errorf("Mismatch (-want +got):\n%s", diff)
+}
+
+// ❌ WRONG: Individual field comparisons
+if response.Name != "Test Product" {  // NEVER do this!
+    t.Errorf("Expected name Test Product, got %s", response.Name)
+}
+```
+
+**Example (Protobuf)**:
 ```go
 // ✅ CORRECT: Use cmp.Diff with protocmp.Transform()
 expected := &pb.Product{
@@ -83,19 +188,6 @@ expected := &pb.Product{
 }
 if diff := cmp.Diff(expected, &response, protocmp.Transform()); diff != "" {
     t.Errorf("Mismatch (-want +got):\n%s", diff)
-}
-
-// ❌ WRONG: Individual field comparisons
-if response.Name != "Test Product" {  // NEVER do this!
-    t.Errorf("Expected name Test Product, got %s", response.Name)
-}
-if !response.Valid {  // NEVER do this!
-    t.Errorf("Expected valid=true")
-}
-
-// ❌ WRONG: Copying non-random fields from response
-expected := &pb.Product{
-    Name: response.Name,  // Wrong! Test always passes
 }
 ```
 
@@ -215,8 +307,8 @@ func TestUserAcceptanceScenarios(t *testing.T) {
 
 ### Test-First Development (TDD)
 
-1. **Design**: Define API contract in OpenAPI → generate `.proto` with `openapi2proto` → generate code with `protoc`
-2. **Write Tests**: Create table-driven integration tests using protobuf structs (verify they fail)
+1. **Design**: Define API contract (OpenAPI or Protobuf) → generate Go code
+2. **Write Tests**: Create table-driven integration tests using generated structs (verify they fail)
 3. **Implement**: Write minimal code to make tests pass
 4. **Run Tests**: Execute full suite after implementation (Principle VI)
 5. **Refactor**: Improve code while keeping tests green, run tests after each change
@@ -268,63 +360,123 @@ When a bug is reported (e.g., via curl request/response, error logs, or user rep
 - AI agents MUST apply Root Cause Tracing (Principle VII) - no superficial fixes
 - AI agents MUST run full test suite after fix to catch regressions (Principle VI)
 
-### OpenAPI → Protobuf Workflow
+### OpenAPI with oapi-codegen Workflow (Recommended for REST APIs)
 
-1. **Define Contract**: Create or update OpenAPI files in `api/openapi/` directory
-2. **Generate Proto**: Run `go generate` to generate `.proto` via `openapi2proto`
-3. **Generate Go Code**: Run protobuf code generation to create Go protobuf structs
-4. **Use in Code**: Import generated packages, use typed structs throughout
-5. **Version**: Stabilize protobuf field numbers via OpenAPI `x-proto-tag` (never reuse deleted field numbers)
-
-### OpenAPI Contract Workflow (OpenAPI → Protobuf Types)
-
-OpenAPI specifications are the single source of truth for API contracts. `.proto` files and generated Go protobuf types MUST be regenerated from OpenAPI whenever the OpenAPI files change.
+Generate Go types and server interfaces directly from OpenAPI specifications using `oapi-codegen`.
 
 **Prerequisites**:
- - OpenAPI linter MUST be run before proto generation to enforce JSON compatibility rules
+- `oapi-codegen` MUST be installed: `go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@latest`
+
+**Workflow**:
+1. **Define Contract**: Create or update OpenAPI files in `api/openapi/<domain>.yaml` (YAML preferred) or `.json`
+2. **Configure oapi-codegen**: Create `oapi-codegen.yaml` configuration file
+3. **Generate Go Code**: Run `go generate` to generate Go types and server interfaces
+4. **Implement Interface**: Implement the generated `StrictServerInterface`
+5. **Use in Code**: Import generated packages, use typed structs throughout
+6. **Update**: Regenerate code whenever OpenAPI spec changes
+
+**oapi-codegen Configuration** (`api/gen/<domain>/oapi-codegen.yaml`):
+```yaml
+package: <domain>
+generate:
+  std-http-server: true    # Go 1.22+ net/http server
+  strict-server: true      # Type-safe request/response handling
+  models: true             # Generate model types
+  embedded-spec: true      # Embed spec for validation
+output: api.gen.go
+```
+
+**`go:generate` example**:
+```go
+//go:generate go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen --config=oapi-codegen.yaml ../../openapi/<domain>.yaml
+```
+
+**Strict Server Implementation**:
+```go
+// Generated interface (do not edit)
+type StrictServerInterface interface {
+    CreateProduct(ctx context.Context, request CreateProductRequestObject) (CreateProductResponseObject, error)
+    GetProduct(ctx context.Context, request GetProductRequestObject) (GetProductResponseObject, error)
+}
+
+// Your implementation
+type ProductServer struct {
+    db *gorm.DB
+}
+
+func (s *ProductServer) CreateProduct(ctx context.Context, request CreateProductRequestObject) (CreateProductResponseObject, error) {
+    // Business logic here - request.Body contains typed CreateProductRequest
+    product := &models.Product{Name: request.Body.Name}
+    if err := s.db.WithContext(ctx).Create(product).Error; err != nil {
+        return nil, err
+    }
+    return CreateProduct201JSONResponse{Id: product.ID, Name: product.Name}, nil
+}
+```
+
+**AI Agent Requirements**:
+- AI agents MUST check if OpenAPI spec exists in `api/openapi/` before generating code
+- AI agents MUST install `oapi-codegen` if not available: `go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@latest`
+- AI agents MUST regenerate code whenever OpenAPI files change
+- AI agents MUST implement the generated `StrictServerInterface` for type-safe handlers
+- AI agents MUST use generated request/response types (NO manual struct definitions)
+
+### Protobuf Workflow (Recommended for gRPC or Cross-Language APIs)
+
+Generate Go types from Protocol Buffer definitions.
+
+**Prerequisites**:
+- `protoc` MUST be installed with `protoc-gen-go` plugin
+- For gRPC: `protoc-gen-go-grpc` plugin
+
+**Workflow**:
+1. **Define Contract**: Create or update `.proto` files in `api/proto/<domain>/v1/`
+2. **Generate Go Code**: Run `protoc` to generate Go protobuf structs
+3. **Use in Code**: Import generated packages, use typed structs throughout
+4. **Serialize**: Use `protojson.Marshal()` / `protojson.Unmarshal()` for JSON
+5. **Version**: Never reuse deleted field numbers
+
+**`go:generate` example**:
+```go
+//go:generate protoc --go_out=. --go_opt=paths=source_relative api/proto/<domain>/v1/<domain>.proto
+```
+
+**AI Agent Requirements**:
+- AI agents MUST use `protojson` for JSON serialization (NOT `encoding/json`)
+- AI agents MUST use `protocmp.Transform()` with `cmp.Diff()` for test comparisons
+- AI agents MUST preserve field numbers and MUST NOT reuse deleted field numbers
+
+### Hybrid Workflow: OpenAPI → Protobuf (Optional)
+
+For projects needing both REST and gRPC, generate Protobuf from OpenAPI using `openapi2proto`.
+
+**Prerequisites**:
 - `openapi2proto` MUST be installed: `go install github.com/NYTimes/openapi2proto/cmd/openapi2proto@latest`
 - `protoc` MUST be installed with `protoc-gen-go` plugin
 
+**Workflow**:
+1. **Define Contract**: Create OpenAPI files in `api/openapi/` (single source of truth)
+2. **Generate Proto**: Run `openapi2proto` to generate `.proto` files (NEVER hand-edit)
+3. **Generate Go Code**: Run `protoc` to generate Go protobuf structs
+4. **Use in Code**: Import generated packages, use typed structs throughout
+5. **Version**: Stabilize field numbers via OpenAPI `x-proto-tag`
+
 **Tooling**:
- - Use a linter to forbid `type: integer` + `format: int64` in OpenAPI schemas (protobuf JSON mapping encodes int64 as strings)
 - Use `openapi2proto` (github.com/NYTimes/openapi2proto) to generate `.proto` from OpenAPI
 - Generate messages only with `-skip-rpcs` unless adopting grpc-gateway
 - Use `x-proto-tag` (in OpenAPI) to stabilize field numbers
 - Use `x-global-options` (in OpenAPI) to set protobuf options such as `go_package`
 
-**Workflow**:
-1. **Check for OpenAPI spec**: If `api/openapi/*.json` exists, MUST treat OpenAPI as the contract source of truth
-2. **Lint OpenAPI**: Run the OpenAPI linter and FAIL if any schema uses `type: integer` + `format: int64`
-3. **Install openapi2proto**: Run `go install github.com/NYTimes/openapi2proto/cmd/openapi2proto@latest`
-4. **Update OpenAPI**: Commit the OpenAPI file under `api/openapi/<domain>/<name>.json`
-5. **Regenerate proto**: Run `openapi2proto` via `go generate` to produce `.proto` into `api/proto/<domain>/v1/`
-6. **Regenerate Go code**: Run protobuf code generation to update Go protobuf structs
-7. **Implement**: Implement services/handlers and tests using protobuf types (Principle V)
-8. **Field number discipline**: Preserve `x-proto-tag` assignments; never renumber existing fields; never reuse deleted field numbers
-
 **`go:generate` example**:
 ```go
 //go:generate go run github.com/NYTimes/openapi2proto/cmd/openapi2proto -spec ../../openapi/pim.json -skip-rpcs -out ../proto/pim/v1/pim.proto
+//go:generate protoc --go_out=. --go_opt=paths=source_relative ../proto/pim/v1/pim.proto
 ```
 
 **AI Agent Requirements**:
-- AI agents MUST check if OpenAPI spec exists in `api/openapi/` before generating protobuf
-- AI agents MUST run OpenAPI lint before proto generation and MUST fail if any schema uses `type: integer` + `format: int64`
-- AI agents MUST install `openapi2proto` if not available: `go install github.com/NYTimes/openapi2proto/cmd/openapi2proto@latest`
-- AI agents MUST attempt to use `openapi2proto` to generate `.proto` from OpenAPI first
-- AI agents MUST verify the generated `.proto` contains message definitions (not just package declaration)
-- If `openapi2proto` produces incomplete output (e.g., only package declaration), AI agents MAY write proto manually but MUST:
-  - Match the OpenAPI schema structure exactly (same field names, types, required fields)
-  - Use `x-proto-tag` values from OpenAPI for field numbers if present
-  - Add a comment at the top: `// Generated from api/openapi/<name>.json - keep in sync with OpenAPI spec`
-- AI agents MUST regenerate/update `.proto` whenever OpenAPI files change
+- AI agents MUST treat OpenAPI as the source of truth (NEVER hand-edit generated `.proto`)
+- AI agents MUST regenerate `.proto` whenever OpenAPI files change
 - AI agents MUST preserve `x-proto-tag` assignments and MUST NOT reuse removed field numbers
-- When OpenAPI spec is the source of truth, proto MUST mirror its schema definitions exactly
-
-**OpenAPI lint command** (repo-local):
-```sh
-go run ./cmd/openapi-lint -spec api/openapi/<domain>/<name>.json
-```
 
 ### Test Database Management
 
@@ -1238,15 +1390,16 @@ func TestProductAPI_Create_DuplicateSKU(t *testing.T) {
 
 - **Language**: Go 1.25+ (recommend latest stable)
 - **Database**: PostgreSQL 15+ (with JSONB support)
-- **HTTP Framework**: Standard library `net/http` using `http.ServeMux`
+- **HTTP Framework**: Standard library `net/http` using `http.ServeMux` (Go 1.22+)
 - **Database Access**: GORM (gorm.io/gorm with gorm.io/driver/postgres)
 - **Distributed Tracing**: OpenTracing (github.com/opentracing/opentracing-go)
-- **OpenAPI Contract**: OpenAPI v3 (JSON)
-- **Protocol Buffers**: protoc compiler, protoc-gen-go, protoc-gen-go-grpc
-- **OpenAPI → Protobuf**: openapi2proto (github.com/NYTimes/openapi2proto)
+- **OpenAPI Contract**: OpenAPI v3 (YAML preferred, JSON supported)
+- **OpenAPI → Go Code**: oapi-codegen (github.com/oapi-codegen/oapi-codegen) - generates types, server interfaces, and clients
+- **Protocol Buffers** (optional): protoc compiler, protoc-gen-go, protoc-gen-go-grpc
+- **OpenAPI → Protobuf** (optional): openapi2proto (github.com/NYTimes/openapi2proto) - for hybrid REST/gRPC
 - **Protobuf JSON**: google.golang.org/protobuf/encoding/protojson (for camelCase JSON serialization)
 - **Testing**: Standard library `testing` package with `httptest`
-- **Test Comparison**: google/go-cmp with protocmp for protobuf message assertions
+- **Test Comparison**: google/go-cmp (with protocmp for protobuf message assertions)
 - **Test Database**: testcontainers-go with PostgreSQL module (automatic Docker container management)
 - **Migration Tool**: GORM AutoMigrate (for development and testing)
 
@@ -1285,4 +1438,4 @@ All pull requests MUST be reviewed against these constitutional requirements:
 
 This constitution is version-controlled alongside code and follows the same review process as code changes.
 
-**Version**: 2.0.0 | **Ratified**: 2025-11-20 | **Last Amended**: 2025-12-15
+**Version**: 2.1.0 | **Ratified**: 2025-11-20 | **Last Amended**: 2025-12-15

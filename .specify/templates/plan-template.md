@@ -26,7 +26,11 @@
 - [ ] **II. Table-Driven Design**: Test cases as slices of structs with descriptive `name` fields, execute using `t.Run(testCase.name, func(t *testing.T) {...})`
 - [ ] **III. Comprehensive Edge Case Coverage**: Input validation (empty/nil, invalid formats, SQL injection, XSS), boundaries (zero/negative/max), auth (missing/expired/invalid tokens), data state (404s, conflicts), database (constraint violations, foreign key failures), HTTP (wrong methods, missing headers, invalid content-types, malformed JSON)
 - [ ] **IV. ServeHTTP Endpoint Testing**: Call root mux ServeHTTP (NOT individual handlers) using `httptest.ResponseRecorder`, identical routing configuration, HTTP path patterns, `r.PathValue()` for parameters
-- [ ] **V. Protobuf Data Structures (Generated from OpenAPI)**: API contracts in OpenAPI specs (single source of truth), `.proto` generated from OpenAPI via `openapi2proto` (MUST NOT hand-edit), tests use protobuf structs (NO `map[string]interface{}`), compare using `cmp.Diff()` with `protocmp.Transform()`, derive expected from TEST FIXTURES (NOT response except truly random: UUIDs, timestamps, crypto-rand tokens), stabilize field numbers via `x-proto-tag`
+- [ ] **V. API Data Structures (Schema-First Design)**: Choose ONE approach:
+  - **Option A (OpenAPI/oapi-codegen)**: API contracts in OpenAPI specs, Go code generated via `oapi-codegen`, implement `StrictServerInterface`, tests use generated structs
+  - **Option B (Protobuf)**: `.proto` files define contracts, Go code generated via `protoc`, use `protojson` for JSON, tests use `protocmp.Transform()`
+  - **Option C (Hybrid)**: OpenAPI → Protobuf via `openapi2proto` (for REST+gRPC)
+  - **Common**: Tests use generated structs (NO `map[string]interface{}`), compare using `cmp.Diff()`, derive expected from TEST FIXTURES (NOT response except truly random: UUIDs, timestamps, crypto-rand tokens)
 - [ ] **VI. Continuous Test Verification**: Run `go test -v ./...` after every change, pass before commit, fix failures immediately, run with `-race` for concurrency safety
 - [ ] **VII. Root Cause Tracing**: Trace backward through call chain, distinguish symptoms from root causes, fix source NOT symptoms, NEVER remove/weaken tests, use debuggers/logging
 - [ ] **VIII. Acceptance Scenario Coverage**: Every user scenario (US#-AS#) in spec.md has corresponding test, test case names reference scenarios, validate complete "Then" clause
@@ -182,19 +186,38 @@ directories captured above]
 
 TDD workflow (Constitution Development Workflow):
 
-1. **Design**: Define API contract in OpenAPI → generate `.proto` with `openapi2proto` → generate Go code with `protoc`
+1. **Design**: Define API contract (OpenAPI or Protobuf) → generate Go code
 2. **Red**: Write integration tests → verify FAIL
 3. **Green**: Implement → run tests → verify PASS
 4. **Refactor**: Improve code → run tests after each change
 5. **Complete**: Done only when ALL tests pass
 
-### OpenAPI → Protobuf Workflow
+### TDD Cycle (Same Pattern)
 
-- **OpenAPI is single source of truth** for API contracts
-- **Generate proto**: `openapi2proto -spec api/openapi/[domain].json -skip-rpcs -out api/proto/[domain]/v1/[domain].proto`
-- **Stabilize field numbers**: Use `x-proto-tag` in OpenAPI (never reuse deleted field numbers)
-- **Set protobuf options**: Use `x-global-options` in OpenAPI for `go_package`
-- **NEVER hand-edit** generated `.proto` files (edit OpenAPI instead)
+- [ ] T080 [US2] Define API contract (OpenAPI or Protobuf) → Generate Go code
+- [ ] T081 [US2] Write tests (US2-AS1, US2-AS2 + edge cases) → Verify FAIL 
+- [ ] T082 [US2] Implement (model, errors, service, handler, routes) → RUN TESTS → Verify PASS 
+- [ ] T083 [US2] Refactor → Run tests after each change 
+- [ ] T084 [US2] Coverage analysis → Verify >80%
+
+### API Contract Workflow (Choose ONE)
+
+**Option A: OpenAPI with oapi-codegen** (Recommended for REST APIs):
+- Define API contract in `api/openapi/<domain>.yaml`
+- Generate Go code: `oapi-codegen --config=oapi-codegen.yaml api/openapi/<domain>.yaml`
+- Implement the generated `StrictServerInterface`
+- Use generated types in handlers and tests
+
+**Option B: Protobuf** (Recommended for gRPC or Cross-Language APIs):
+- Define messages in `api/proto/<domain>/v1/<domain>.proto`
+- Generate Go code: `protoc --go_out=. --go_opt=paths=source_relative api/proto/<domain>/v1/<domain>.proto`
+- Use `protojson` for JSON serialization
+
+**Option C: Hybrid (OpenAPI → Protobuf)** (For REST+gRPC):
+- OpenAPI is single source of truth
+- Generate proto: `openapi2proto -spec api/openapi/[domain].json -skip-rpcs -out api/proto/[domain]/v1/[domain].proto`
+- Stabilize field numbers via `x-proto-tag` (never reuse deleted field numbers)
+- NEVER hand-edit generated `.proto` files
 
 ### Integration Testing Requirements
 
