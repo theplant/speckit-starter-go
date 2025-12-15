@@ -57,10 +57,12 @@ API endpoints MUST be tested via ServeHTTP interface:
 **Why Root Mux (Not Individual Handlers)**:
 Calling `handler.Create(rec, req)` bypasses routing, middleware, and method matching. Tests pass even with broken route registration (e.g., typo in path). Calling `mux.ServeHTTP(rec, req)` tests the complete stack and catches routing bugs before production.
 
-### V. Protobuf Data Structures
+### V. Protobuf Data Structures (Generated from OpenAPI)
 
-All public API data structures MUST be defined in Protocol Buffers:
-- API contracts MUST be defined in `.proto` files (single source of truth)
+All public API data structures MUST be represented using Protocol Buffers, generated from OpenAPI:
+- API contracts MUST be defined in OpenAPI specifications (single source of truth)
+- `.proto` files MUST be generated from OpenAPI and MUST NOT be hand-edited
+- Protobuf field numbers MUST be stabilized via OpenAPI `x-proto-tag` (never reuse deleted field numbers)
 - Tests MUST use protobuf structs (NO `map[string]interface{}`)
 - **CRITICAL**: Tests MUST compare protobuf messages using `cmp.Diff()` with `protocmp.Transform()` (NO `==`, `reflect.DeepEqual`, or individual field checks)
 - **AI Agent Requirement**: ALWAYS use `cmp.Diff(expected, got, protocmp.Transform())` for protobuf assertions. NEVER use individual field comparisons like `if resp.Field != expected`
@@ -213,7 +215,7 @@ func TestUserAcceptanceScenarios(t *testing.T) {
 
 ### Test-First Development (TDD)
 
-1. **Design**: Define API contract in `.proto` files → generate code with `protoc`
+1. **Design**: Define API contract in OpenAPI → generate `.proto` with `openapi2proto` → generate code with `protoc`
 2. **Write Tests**: Create table-driven integration tests using protobuf structs (verify they fail)
 3. **Implement**: Write minimal code to make tests pass
 4. **Run Tests**: Execute full suite after implementation (Principle VI)
@@ -266,13 +268,63 @@ When a bug is reported (e.g., via curl request/response, error logs, or user rep
 - AI agents MUST apply Root Cause Tracing (Principle VII) - no superficial fixes
 - AI agents MUST run full test suite after fix to catch regressions (Principle VI)
 
-### Protobuf Workflow
+### OpenAPI → Protobuf Workflow
 
-1. **Define Schema**: Create or update `.proto` files in `api/` directory
-2. **Generate Code**: Run `go generate` to create Go structs (add `//go:generate` directives)
-3. **Use in Code**: Import generated packages, use typed structs throughout
-4. **Validate**: Implement validation in service layer (check required fields, formats, constraints)
-5. **Version**: Use protobuf field numbers consistently (never reuse deleted field numbers)
+1. **Define Contract**: Create or update OpenAPI files in `api/openapi/` directory
+2. **Generate Proto**: Run `go generate` to generate `.proto` via `openapi2proto`
+3. **Generate Go Code**: Run protobuf code generation to create Go protobuf structs
+4. **Use in Code**: Import generated packages, use typed structs throughout
+5. **Version**: Stabilize protobuf field numbers via OpenAPI `x-proto-tag` (never reuse deleted field numbers)
+
+### OpenAPI Contract Workflow (OpenAPI → Protobuf Types)
+
+OpenAPI specifications are the single source of truth for API contracts. `.proto` files and generated Go protobuf types MUST be regenerated from OpenAPI whenever the OpenAPI files change.
+
+**Prerequisites**:
+ - OpenAPI linter MUST be run before proto generation to enforce JSON compatibility rules
+- `openapi2proto` MUST be installed: `go install github.com/NYTimes/openapi2proto/cmd/openapi2proto@latest`
+- `protoc` MUST be installed with `protoc-gen-go` plugin
+
+**Tooling**:
+ - Use a linter to forbid `type: integer` + `format: int64` in OpenAPI schemas (protobuf JSON mapping encodes int64 as strings)
+- Use `openapi2proto` (github.com/NYTimes/openapi2proto) to generate `.proto` from OpenAPI
+- Generate messages only with `-skip-rpcs` unless adopting grpc-gateway
+- Use `x-proto-tag` (in OpenAPI) to stabilize field numbers
+- Use `x-global-options` (in OpenAPI) to set protobuf options such as `go_package`
+
+**Workflow**:
+1. **Check for OpenAPI spec**: If `api/openapi/*.json` exists, MUST treat OpenAPI as the contract source of truth
+2. **Lint OpenAPI**: Run the OpenAPI linter and FAIL if any schema uses `type: integer` + `format: int64`
+3. **Install openapi2proto**: Run `go install github.com/NYTimes/openapi2proto/cmd/openapi2proto@latest`
+4. **Update OpenAPI**: Commit the OpenAPI file under `api/openapi/<domain>/<name>.json`
+5. **Regenerate proto**: Run `openapi2proto` via `go generate` to produce `.proto` into `api/proto/<domain>/v1/`
+6. **Regenerate Go code**: Run protobuf code generation to update Go protobuf structs
+7. **Implement**: Implement services/handlers and tests using protobuf types (Principle V)
+8. **Field number discipline**: Preserve `x-proto-tag` assignments; never renumber existing fields; never reuse deleted field numbers
+
+**`go:generate` example**:
+```go
+//go:generate go run github.com/NYTimes/openapi2proto/cmd/openapi2proto -spec ../../openapi/pim.json -skip-rpcs -out ../proto/pim/v1/pim.proto
+```
+
+**AI Agent Requirements**:
+- AI agents MUST check if OpenAPI spec exists in `api/openapi/` before generating protobuf
+- AI agents MUST run OpenAPI lint before proto generation and MUST fail if any schema uses `type: integer` + `format: int64`
+- AI agents MUST install `openapi2proto` if not available: `go install github.com/NYTimes/openapi2proto/cmd/openapi2proto@latest`
+- AI agents MUST attempt to use `openapi2proto` to generate `.proto` from OpenAPI first
+- AI agents MUST verify the generated `.proto` contains message definitions (not just package declaration)
+- If `openapi2proto` produces incomplete output (e.g., only package declaration), AI agents MAY write proto manually but MUST:
+  - Match the OpenAPI schema structure exactly (same field names, types, required fields)
+  - Use `x-proto-tag` values from OpenAPI for field numbers if present
+  - Add a comment at the top: `// Generated from api/openapi/<name>.json - keep in sync with OpenAPI spec`
+- AI agents MUST regenerate/update `.proto` whenever OpenAPI files change
+- AI agents MUST preserve `x-proto-tag` assignments and MUST NOT reuse removed field numbers
+- When OpenAPI spec is the source of truth, proto MUST mirror its schema definitions exactly
+
+**OpenAPI lint command** (repo-local):
+```sh
+go run ./cmd/openapi-lint -spec api/openapi/<domain>/<name>.json
+```
 
 ### Test Database Management
 
@@ -491,10 +543,12 @@ type ProductService interface {
 // ✅ CORRECT: Services/handlers in public packages
 github.com/theplant/myapp/
 ├── api/
-│   ├── proto/pim/v1/  // PUBLIC - protobuf source files
-│   │   └── product.proto
+│   ├── openapi/  // PUBLIC - OpenAPI specifications (single source of truth)
+│   │   └── pim.json
+│   ├── proto/pim/v1/  // PUBLIC - protobuf source files (generated from OpenAPI)
+│   │   └── pim.proto
 │   └── gen/pim/v1/    // PUBLIC - generated protobuf (services return these)
-│       └── product.pb.go
+│       └── pim.pb.go
 ├── services/          // PUBLIC - reusable by external apps
 │   ├── product_service.go
 │   └── errors.go
@@ -910,6 +964,7 @@ func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
     
     var req pb.CreateProductRequest
     if err := DecodeProtoJSON(r, &req); err != nil {
+        span.SetTag("error", true)
         RespondWithError(w, Errors.InvalidRequest, err)  // Principle XIII: Pass error for details
         return
     }
@@ -1186,7 +1241,9 @@ func TestProductAPI_Create_DuplicateSKU(t *testing.T) {
 - **HTTP Framework**: Standard library `net/http` using `http.ServeMux`
 - **Database Access**: GORM (gorm.io/gorm with gorm.io/driver/postgres)
 - **Distributed Tracing**: OpenTracing (github.com/opentracing/opentracing-go)
+- **OpenAPI Contract**: OpenAPI v3 (JSON)
 - **Protocol Buffers**: protoc compiler, protoc-gen-go, protoc-gen-go-grpc
+- **OpenAPI → Protobuf**: openapi2proto (github.com/NYTimes/openapi2proto)
 - **Protobuf JSON**: google.golang.org/protobuf/encoding/protojson (for camelCase JSON serialization)
 - **Testing**: Standard library `testing` package with `httptest`
 - **Test Comparison**: google/go-cmp with protocmp for protobuf message assertions
@@ -1228,5 +1285,4 @@ All pull requests MUST be reviewed against these constitutional requirements:
 
 This constitution is version-controlled alongside code and follows the same review process as code changes.
 
-**Version**: 1.13.0 | **Ratified**: 2025-11-20 | **Last Amended**: 2025-12-11
-
+**Version**: 2.0.0 | **Ratified**: 2025-11-20 | **Last Amended**: 2025-12-15

@@ -22,11 +22,11 @@
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
 ### Testing Principles (I-IX)
-- [ ] **I. Integration Testing (No Mocking)**: Real PostgreSQL via testcontainers, test isolation with table truncation, fixtures via GORM, NO mocks in implementation code, mocking ONLY in `*_test.go` for external systems with justification
+- [ ] **I. Integration Testing (No Mocking)**: Real PostgreSQL via testcontainers, test isolation with table truncation, fixtures via GORM, NO mocks in implementation code, mocking ONLY in `*_test.go` for external systems with justification. Test setup uses public APIs and dependency injection (NOT direct `internal/` package imports). Exception: `testutil/` MAY import `internal/models` strictly for fixtures.
 - [ ] **II. Table-Driven Design**: Test cases as slices of structs with descriptive `name` fields, execute using `t.Run(testCase.name, func(t *testing.T) {...})`
 - [ ] **III. Comprehensive Edge Case Coverage**: Input validation (empty/nil, invalid formats, SQL injection, XSS), boundaries (zero/negative/max), auth (missing/expired/invalid tokens), data state (404s, conflicts), database (constraint violations, foreign key failures), HTTP (wrong methods, missing headers, invalid content-types, malformed JSON)
 - [ ] **IV. ServeHTTP Endpoint Testing**: Call root mux ServeHTTP (NOT individual handlers) using `httptest.ResponseRecorder`, identical routing configuration, HTTP path patterns, `r.PathValue()` for parameters
-- [ ] **V. Protobuf Data Structures**: API contracts in `.proto` files, tests use protobuf structs (NO `map[string]interface{}`), compare using `cmp.Diff()` with `protocmp.Transform()`, derive expected from TEST FIXTURES (NOT response except truly random: UUIDs, timestamps, crypto-rand tokens)
+- [ ] **V. Protobuf Data Structures (Generated from OpenAPI)**: API contracts in OpenAPI specs (single source of truth), `.proto` generated from OpenAPI via `openapi2proto` (MUST NOT hand-edit), tests use protobuf structs (NO `map[string]interface{}`), compare using `cmp.Diff()` with `protocmp.Transform()`, derive expected from TEST FIXTURES (NOT response except truly random: UUIDs, timestamps, crypto-rand tokens), stabilize field numbers via `x-proto-tag`
 - [ ] **VI. Continuous Test Verification**: Run `go test -v ./...` after every change, pass before commit, fix failures immediately, run with `-race` for concurrency safety
 - [ ] **VII. Root Cause Tracing**: Trace backward through call chain, distinguish symptoms from root causes, fix source NOT symptoms, NEVER remove/weaken tests, use debuggers/logging
 - [ ] **VIII. Acceptance Scenario Coverage**: Every user scenario (US#-AS#) in spec.md has corresponding test, test case names reference scenarios, validate complete "Then" clause
@@ -34,8 +34,9 @@
 
 ### System Architecture (X)
 - [ ] **X. Service Layer Architecture**: Business logic in Go interfaces (service layer), services MUST NOT depend on HTTP types (only `context.Context` allowed), handlers thin wrappers
+- [ ] **ALL Validation in Services**: Handlers MUST NOT validate input (including empty/nil checks). Handlers ONLY: decode request, extract path params, call service, write response
 - [ ] **Package Structure**: Services/handlers in public packages (NOT `internal/`) for reusability, external dependencies injected via builder pattern
-- [ ] **Builder Pattern**: Services use `NewService(db).WithLogger(log).Build()` (required params in constructor, optional via `With*()` methods)
+- [ ] **Builder Pattern**: Services use `NewService(db).WithLogger(log).Build()` (required params in constructor, optional via `With*()` methods). Routes use builder: `NewRouter(svc, db).WithMiddlewares(...).Build()`
 - [ ] **Service Method Parameters**: MUST use protobuf structs for ALL parameters and return types (NO primitives, NO maps)
 - [ ] **Main Entry Point**: `cmd/main.go` MUST ONLY call handlers or services (NEVER `internal/` packages directly). If needs `internal/` functionality, promote to public service
 - [ ] **Data Flow**: HTTP → Handler (thin) → Service (protobuf) → GORM Model → Database
@@ -94,10 +95,12 @@ specs/[###-feature]/
 # [REMOVE IF UNUSED] Option 1: Single Go API (DEFAULT)
 # Services MUST be in public packages (not internal/) for cross-app reusability
 api/
-├── proto/                  # Protobuf definitions (.proto files)
+├── openapi/               # OpenAPI specifications (SINGLE SOURCE OF TRUTH)
+│   └── [SERVICE].json      # e.g., pim.json - API contract definitions
+├── proto/                 # Protobuf definitions (GENERATED from OpenAPI - DO NOT HAND-EDIT)
 │   └── [SERVICE]/v1/      # Service name with API versioning
-│       └── *.proto
-└── gen/                    # Protobuf generated code (PUBLIC - must be importable)
+│       └── *.proto        # Generated via openapi2proto
+└── gen/                   # Protobuf generated code (PUBLIC - must be importable)
     └── [SERVICE]/v1/      # Service name with API versioning
         ├── *.pb.go
         └── *.pb.validate.go
@@ -111,8 +114,9 @@ handlers/                   # PUBLIC package - HTTP handlers (reusable)
 ├── product_handler.go
 ├── product_handler_test.go
 ├── error_codes.go         # HTTP error code singleton with ServiceErr mapping
-├── middleware.go         # App-specific middleware (was in internal/)
-└── routes.go              # Shared routing configuration
+├── helpers.go             # DecodeProtoJSON(), RespondWithProto(), RespondWithError()
+├── middleware.go          # App-specific middleware
+└── routes.go              # Shared routing configuration (builder pattern)
 
 internal/                   # INTERNAL - implementation details only
 ├── models/                # GORM models (internal - services return protobuf)
@@ -131,7 +135,8 @@ testutil/                   # Test helpers and fixtures
 # Each service follows Option 1 structure
 service-a/
 ├── api/
-│   ├── proto/            # Protobuf definitions
+│   ├── openapi/          # OpenAPI specifications (SINGLE SOURCE OF TRUTH)
+│   ├── proto/            # Protobuf definitions (GENERATED from OpenAPI)
 │   │   └── [SERVICE]/v1/  # Service name with API versioning
 │   └── gen/              # Generated code
 │       └── [SERVICE]/v1/  # Service name with API versioning
@@ -144,7 +149,8 @@ service-a/
 
 service-b/
 ├── api/
-│   ├── proto/            # Protobuf definitions
+│   ├── openapi/          # OpenAPI specifications (SINGLE SOURCE OF TRUTH)
+│   ├── proto/            # Protobuf definitions (GENERATED from OpenAPI)
 │   │   └── [SERVICE]/v1/  # Service name with API versioning
 │   └── gen/              # Generated code
 │       └── [SERVICE]/v1/  # Service name with API versioning
@@ -176,11 +182,19 @@ directories captured above]
 
 TDD workflow (Constitution Development Workflow):
 
-1. **Design**: Define API in `.proto` files → generate code
+1. **Design**: Define API contract in OpenAPI → generate `.proto` with `openapi2proto` → generate Go code with `protoc`
 2. **Red**: Write integration tests → verify FAIL
 3. **Green**: Implement → run tests → verify PASS
 4. **Refactor**: Improve code → run tests after each change
 5. **Complete**: Done only when ALL tests pass
+
+### OpenAPI → Protobuf Workflow
+
+- **OpenAPI is single source of truth** for API contracts
+- **Generate proto**: `openapi2proto -spec api/openapi/[domain].json -skip-rpcs -out api/proto/[domain]/v1/[domain].proto`
+- **Stabilize field numbers**: Use `x-proto-tag` in OpenAPI (never reuse deleted field numbers)
+- **Set protobuf options**: Use `x-global-options` in OpenAPI for `go_package`
+- **NEVER hand-edit** generated `.proto` files (edit OpenAPI instead)
 
 ### Integration Testing Requirements
 
@@ -188,7 +202,7 @@ Constitution Testing Principles I-IX:
 
 - **Integration tests ONLY** (NO mocking in implementation code), real PostgreSQL via testcontainers
 - **Mocking Policy**: ONLY in test code (`*_test.go`) for external systems with justification, NEVER in production code
-- **Test Setup**: Use public APIs and dependency injection (NOT direct `internal/` package imports)
+- **Test Setup**: Use public APIs and dependency injection (NOT direct `internal/` package imports). Exception: `testutil/` MAY import `internal/models` strictly for fixtures.
 - **Table-driven** with `name` fields, execute using `t.Run(testCase.name, func(t *testing.T) {...})`
 - **Edge cases MANDATORY**: Input validation (empty/nil, invalid formats, SQL injection, XSS), boundaries (zero/negative/max), auth (missing/expired/invalid tokens), data state (404s, conflicts), database (constraint violations, foreign key failures), HTTP (wrong methods, missing headers, invalid content-types, malformed JSON)
 - **ServeHTTP testing** via root mux (NOT individual handlers), identical routing configuration from shared routes package
