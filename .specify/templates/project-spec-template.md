@@ -121,27 +121,14 @@ Key aspects:
 - [Use case 4: User workflow]
 - [Use case 5: Cross-system scenario]
 
-## 8. System Contracts
-
-[Core guarantees and invariants that the system provides to its consumers]
-
-- [Contract 1: Data consistency guarantee]
-- [Contract 2: API stability contract]
-- [Contract 3: Performance contract]
-- [Contract 4: Transactional guarantee]
-- [Contract 5: Idempotency guarantee]
-- [Contract 6: Versioning contract]
-- [Contract 7: Error handling contract]
-- [Contract 8: Time/timezone contract]
-
-## 9. Success Metrics
+## 8. Success Metrics
 
 - [Metric 1: Performance target with specific numbers]
 - [Metric 2: Capacity or scale target]
 - [Metric 3: Quality or reliability target]
 - [Metric 4: Business outcome metric]
 
-## 10. Open Questions
+## 9. Open Questions
 
 - [Question 1]
   - Current approach: [Placeholder or temporary solution]
@@ -151,96 +138,10 @@ Key aspects:
   - Current approach: [How we're handling it now]
   - Alternatives: [Other possible approaches]
 
-## 11. Decision Points
-
-### [Decision Topic 1]
-
-- **Option A**: [Approach]
-  - Pros: [Advantages]
-  - Cons: [Disadvantages]
-
-- **Option B**: [Alternative approach]
-  - Pros: [Advantages]
-  - Cons: [Disadvantages]
-
-- **Recommendation**: [Suggested path with rationale]
-
-### [Decision Topic 2]
-
-- **Option A**: [Approach]
-- **Option B**: [Alternative]
-- **Recommendation**: [Choice and reasoning]
-
-## 12. Dependencies
-
-### External Systems
-
-- [System 1] – [What we depend on / what they consume from us]
-- [System 2] – [Dependency description]
-- [System 3] – [Integration requirement]
-
-### Internal Dependencies
-
-- [Component 1] – [Relationship]
-- [Component 2] – [Relationship]
-
-## 13. Risks & Mitigations
+## 10. Risks & Mitigations
 
 | Risk | Impact | Likelihood | Mitigation |
 |------|--------|------------|------------|
 | [Risk 1] | High/Med/Low | High/Med/Low | [Mitigation strategy] |
 | [Risk 2] | Impact level | Likelihood | [How to address] |
 | [Risk 3] | Impact level | Likelihood | [Mitigation approach] |
-
-## 14. Out of Scope
-
-[Reinforce what we are NOT building or supporting]
-
-- [Out of scope item 1: Feature or capability]
-- [Out of scope item 2: System responsibility]
-- [Out of scope item 3: Use case or scenario]
-
-## 15. Architecture Overview
-
-### High-Level Components
-
-```
-[Component Diagram or ASCII art showing major components and their relationships]
-
-Example:
-┌─────────────┐
-│   Frontend  │
-└──────┬──────┘
-       │
-┌──────▼──────────────────────┐
-│      API Gateway            │
-└──────┬──────────────────────┘
-       │
-┌──────▼──────┐    ┌──────────┐
-│  Core Logic │───►│ Database │
-└──────┬──────┘    └──────────┘
-       │
-┌──────▼──────────┐
-│ Message Queue   │
-└──────┬──────────┘
-       │
-┌──────▼──────────────┐
-│ Downstream Systems  │
-└─────────────────────┘
-```
-
-### Key Design Patterns
-
-- [Pattern 1: e.g., Event-driven, CQRS, etc.]
-- [Pattern 2: e.g., Repository pattern, etc.]
-- [Pattern 3: e.g., Publish-subscribe, etc.]
-
-## 16. Links
-
-- **Feature Specs**: [Link to feature specifications directory]
-- **API Spec**: [Link to API documentation]
-- **Data Model**: [Link to data model documentation]
-- **Architecture Diagrams**: [Link to architecture diagrams]
-- **Migration Guide**: [Link to migration documentation]
-- **Runbook**: [Link to operational runbook]
-- **Edge Cases**: [Link to edge case documentation]
