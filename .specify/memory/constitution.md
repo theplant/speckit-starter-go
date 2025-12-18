@@ -1,3 +1,34 @@
+<!--
+## Sync Impact Report
+
+**Version Change**: 2.0.0 → 2.1.0 (MINOR)
+**Bump Rationale**: Added oapi-codegen as alternative to Protobuf for OpenAPI → Go code generation. This is a MINOR change as it adds new capability without removing existing Protobuf support.
+
+**Modified Principles**:
+- V. "Protobuf Data Structures (Generated from OpenAPI)" → "API Data Structures (Schema-First Design)" - Now supports both OpenAPI/oapi-codegen and Protobuf approaches
+
+**Added Sections**:
+- Option A: OpenAPI with oapi-codegen (Recommended for REST APIs)
+- Option B: Protobuf (Recommended for gRPC or Cross-Language APIs)
+- Hybrid Approach: OpenAPI → Protobuf (Optional)
+- OpenAPI with oapi-codegen Workflow
+- Protobuf Workflow
+- Hybrid Workflow: OpenAPI → Protobuf
+
+**Removed Sections**:
+- "OpenAPI → Protobuf Workflow" (replaced with three separate workflow sections)
+- "OpenAPI Contract Workflow (OpenAPI → Protobuf Types)" (merged into new workflow sections)
+
+**Templates Requiring Updates**:
+- ✅ plan-template.md - References Principle V, needs update for dual approach
+- ✅ spec-template.md - References Principle V, needs update for dual approach
+- ✅ tasks-template.md - References OpenAPI → Protobuf workflow, needs update
+
+**Follow-up TODOs**:
+- Update plan-template.md to reference both OpenAPI and Protobuf approaches
+- Update spec-template.md to reference both approaches
+- Update tasks-template.md to reference both approaches
+-->
 
 # Go Project Constitution
 
@@ -14,6 +45,9 @@ This constitution defines the core principles and governance for Go microservice
 - Implementation code MUST NEVER contain mocks or mock interfaces
 - Dependencies requiring testability MUST be injected via interfaces using builder pattern (Principle X)
 - Test code MUST NOT call `internal/` packages for setup - dependencies MUST be injected via service constructors
+- **Exception (models-only fixtures)**: `testutil/` and fixture helpers MAY import `internal/models` strictly for inserting realistic database fixtures via GORM.
+  - This exception applies ONLY to `internal/models` (NOT `internal/config`, NOT `internal/*` broadly)
+  - Tests MUST still exercise behavior through public services/handlers (fixtures are setup only)
 - Test setup MUST use public APIs and dependency injection (NOT direct internal package imports)
 - Mocking is ONLY permitted in test code when testing interactions with external systems (third-party APIs, message queues)
 - Mock implementations MUST be defined in `*_test.go` files (NEVER in production code files)
@@ -54,20 +88,96 @@ API endpoints MUST be tested via ServeHTTP interface:
 **Why Root Mux (Not Individual Handlers)**:
 Calling `handler.Create(rec, req)` bypasses routing, middleware, and method matching. Tests pass even with broken route registration (e.g., typo in path). Calling `mux.ServeHTTP(rec, req)` tests the complete stack and catches routing bugs before production.
 
-### V. Protobuf Data Structures
+### V. API Data Structures (Schema-First Design)
 
-All public API data structures MUST be defined in Protocol Buffers:
-- API contracts MUST be defined in `.proto` files (single source of truth)
+All public API data structures MUST use typed structs generated from API specifications. This project supports **two approaches**:
+
+#### Option A: OpenAPI with oapi-codegen (Recommended for REST APIs)
+
+Generate Go types and server interfaces directly from OpenAPI specifications:
+- API contracts MUST be defined in OpenAPI specifications (single source of truth)
+- Go code MUST be generated using `oapi-codegen` (github.com/oapi-codegen/oapi-codegen)
+- Generated types provide native Go structs with JSON tags
+- Use "strict server" mode for type-safe request/response handling
+- **CRITICAL**: Services MUST NOT define their own interfaces. Instead, implement the generated `StrictServerInterface` directly
+- Business logic handlers implement `StrictServerInterface` - this IS the service layer for OpenAPI projects
+- Tests MUST use generated structs (NO `map[string]interface{}`)
+- **CRITICAL**: Tests MUST compare structs using `cmp.Diff()` (NO `==`, `reflect.DeepEqual`, or individual field checks)
+
+**oapi-codegen Workflow**:
+1. Define API contract in `api/openapi/<domain>.yaml` or `api/openapi/<domain>.json`
+2. Generate Go code: `oapi-codegen --config=oapi-codegen.yaml api/openapi/<domain>.yaml`
+3. Implement the generated `StrictServerInterface` directly (NO separate service interface)
+4. Use generated types in handlers and tests
+
+**oapi-codegen Configuration** (`oapi-codegen.yaml`):
+```yaml
+package: api
+generate:
+  strict-server: true
+  models: true
+  embedded-spec: true
+output: api/gen/<domain>/api.gen.go
+```
+
+**go:generate example**:
+```go
+//go:generate go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen --config=oapi-codegen.yaml ../../openapi/<domain>.yaml
+```
+
+#### Option B: Protobuf (Recommended for gRPC or Cross-Language APIs)
+
+Generate Go types from Protocol Buffer definitions:
+- `.proto` files define the API contract (single source of truth)
+- Protobuf field numbers MUST be stabilized (never reuse deleted field numbers)
 - Tests MUST use protobuf structs (NO `map[string]interface{}`)
-- **CRITICAL**: Tests MUST compare protobuf messages using `cmp.Diff()` with `protocmp.Transform()` (NO `==`, `reflect.DeepEqual`, or individual field checks)
-- **AI Agent Requirement**: ALWAYS use `cmp.Diff(expected, got, protocmp.Transform())` for protobuf assertions. NEVER use individual field comparisons like `if resp.Field != expected`
+- **CRITICAL**: Tests MUST compare protobuf messages using `cmp.Diff()` with `protocmp.Transform()`
+- Use `protojson` for JSON serialization (camelCase)
+
+**Protobuf Workflow**:
+1. Define messages in `api/proto/<domain>/v1/<domain>.proto`
+2. Generate Go code: `protoc --go_out=. --go_opt=paths=source_relative api/proto/<domain>/v1/<domain>.proto`
+3. Use generated types in services and handlers
+4. Serialize with `protojson.Marshal()` / `protojson.Unmarshal()`
+
+#### Hybrid Approach: OpenAPI → Protobuf (Optional)
+
+For projects needing both REST and gRPC, generate Protobuf from OpenAPI:
+- API contracts MUST be defined in OpenAPI specifications (single source of truth)
+- `.proto` files MUST be generated from OpenAPI via `openapi2proto` and MUST NOT be hand-edited
+- Protobuf field numbers MUST be stabilized via OpenAPI `x-proto-tag`
+
+#### Common Requirements (Both Approaches)
+
+- Tests MUST use generated structs (NO `map[string]interface{}`)
+- **CRITICAL**: Tests MUST compare using `cmp.Diff()` (with `protocmp.Transform()` for protobuf)
+- **AI Agent Requirement**: ALWAYS use `cmp.Diff()` for struct assertions. NEVER use individual field comparisons like `if resp.Field != expected`
 - **Expected values MUST be derived from TEST FIXTURES** (request data, database fixtures, config)
 - **Copy from response ONLY for truly random fields**: UUIDs, timestamps, crypto-rand tokens
 - **Copying non-random response fields defeats testing** (test always passes)
 
-**Rationale**: Protobuf provides type safety and schema-first design. Protocmp ensures complete message validation. Deriving expected values from fixtures (not responses) ensures tests actually validate correctness.
+**Rationale**: Schema-first design provides type safety and ensures API contracts are the source of truth. Generated types eliminate manual struct maintenance and reduce bugs. `cmp.Diff()` ensures complete struct validation.
 
-**Example**:
+**Example (OpenAPI with oapi-codegen)**:
+```go
+// ✅ CORRECT: Use cmp.Diff for struct comparison
+expected := api.Product{
+    Id:          response.Id,          // Random UUID (use response)
+    Name:        "Test Product",       // From request fixture
+    CategoryId:  category.ID,          // From database fixture
+    CreatedAt:   response.CreatedAt,   // Timestamp (use response)
+}
+if diff := cmp.Diff(expected, response); diff != "" {
+    t.Errorf("Mismatch (-want +got):\n%s", diff)
+}
+
+// ❌ WRONG: Individual field comparisons
+if response.Name != "Test Product" {  // NEVER do this!
+    t.Errorf("Expected name Test Product, got %s", response.Name)
+}
+```
+
+**Example (Protobuf)**:
 ```go
 // ✅ CORRECT: Use cmp.Diff with protocmp.Transform()
 expected := &pb.Product{
@@ -78,19 +188,6 @@ expected := &pb.Product{
 }
 if diff := cmp.Diff(expected, &response, protocmp.Transform()); diff != "" {
     t.Errorf("Mismatch (-want +got):\n%s", diff)
-}
-
-// ❌ WRONG: Individual field comparisons
-if response.Name != "Test Product" {  // NEVER do this!
-    t.Errorf("Expected name Test Product, got %s", response.Name)
-}
-if !response.Valid {  // NEVER do this!
-    t.Errorf("Expected valid=true")
-}
-
-// ❌ WRONG: Copying non-random fields from response
-expected := &pb.Product{
-    Name: response.Name,  // Wrong! Test always passes
 }
 ```
 
@@ -210,8 +307,8 @@ func TestUserAcceptanceScenarios(t *testing.T) {
 
 ### Test-First Development (TDD)
 
-1. **Design**: Define API contract in `.proto` files → generate code with `protoc`
-2. **Write Tests**: Create table-driven integration tests using protobuf structs (verify they fail)
+1. **Design**: Define API contract (OpenAPI or Protobuf) → generate Go code
+2. **Write Tests**: Create table-driven integration tests using generated structs (verify they fail)
 3. **Implement**: Write minimal code to make tests pass
 4. **Run Tests**: Execute full suite after implementation (Principle VI)
 5. **Refactor**: Improve code while keeping tests green, run tests after each change
@@ -263,13 +360,123 @@ When a bug is reported (e.g., via curl request/response, error logs, or user rep
 - AI agents MUST apply Root Cause Tracing (Principle VII) - no superficial fixes
 - AI agents MUST run full test suite after fix to catch regressions (Principle VI)
 
-### Protobuf Workflow
+### OpenAPI with oapi-codegen Workflow (Recommended for REST APIs)
 
-1. **Define Schema**: Create or update `.proto` files in `api/` directory
-2. **Generate Code**: Run `go generate` to create Go structs (add `//go:generate` directives)
+Generate Go types and server interfaces directly from OpenAPI specifications using `oapi-codegen`.
+
+**Prerequisites**:
+- `oapi-codegen` MUST be installed: `go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@latest`
+
+**Workflow**:
+1. **Define Contract**: Create or update OpenAPI files in `api/openapi/<domain>.yaml` (YAML preferred) or `.json`
+2. **Configure oapi-codegen**: Create `oapi-codegen.yaml` configuration file
+3. **Generate Go Code**: Run `go generate` to generate Go types and server interfaces
+4. **Implement Interface**: Implement the generated `StrictServerInterface`
+5. **Use in Code**: Import generated packages, use typed structs throughout
+6. **Update**: Regenerate code whenever OpenAPI spec changes
+
+**oapi-codegen Configuration** (`api/gen/<domain>/oapi-codegen.yaml`):
+```yaml
+package: <domain>
+generate:
+  std-http-server: true    # Go 1.22+ net/http server
+  strict-server: true      # Type-safe request/response handling
+  models: true             # Generate model types
+  embedded-spec: true      # Embed spec for validation
+output: api.gen.go
+```
+
+**`go:generate` example**:
+```go
+//go:generate go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen --config=oapi-codegen.yaml ../../openapi/<domain>.yaml
+```
+
+**Strict Server Implementation**:
+```go
+// Generated interface (do not edit)
+type StrictServerInterface interface {
+    CreateProduct(ctx context.Context, request CreateProductRequestObject) (CreateProductResponseObject, error)
+    GetProduct(ctx context.Context, request GetProductRequestObject) (GetProductResponseObject, error)
+}
+
+// Your implementation
+type ProductServer struct {
+    db *gorm.DB
+}
+
+func (s *ProductServer) CreateProduct(ctx context.Context, request CreateProductRequestObject) (CreateProductResponseObject, error) {
+    // Business logic here - request.Body contains typed CreateProductRequest
+    product := &models.Product{Name: request.Body.Name}
+    if err := s.db.WithContext(ctx).Create(product).Error; err != nil {
+        return nil, err
+    }
+    return CreateProduct201JSONResponse{Id: product.ID, Name: product.Name}, nil
+}
+```
+
+**AI Agent Requirements**:
+- AI agents MUST check if OpenAPI spec exists in `api/openapi/` before generating code
+- AI agents MUST install `oapi-codegen` if not available: `go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@latest`
+- AI agents MUST regenerate code whenever OpenAPI files change
+- AI agents MUST implement the generated `StrictServerInterface` for type-safe handlers
+- AI agents MUST use generated request/response types (NO manual struct definitions)
+
+### Protobuf Workflow (Recommended for gRPC or Cross-Language APIs)
+
+Generate Go types from Protocol Buffer definitions.
+
+**Prerequisites**:
+- `protoc` MUST be installed with `protoc-gen-go` plugin
+- For gRPC: `protoc-gen-go-grpc` plugin
+
+**Workflow**:
+1. **Define Contract**: Create or update `.proto` files in `api/proto/<domain>/v1/`
+2. **Generate Go Code**: Run `protoc` to generate Go protobuf structs
 3. **Use in Code**: Import generated packages, use typed structs throughout
-4. **Validate**: Implement validation in service layer (check required fields, formats, constraints)
-5. **Version**: Use protobuf field numbers consistently (never reuse deleted field numbers)
+4. **Serialize**: Use `protojson.Marshal()` / `protojson.Unmarshal()` for JSON
+5. **Version**: Never reuse deleted field numbers
+
+**`go:generate` example**:
+```go
+//go:generate protoc --go_out=. --go_opt=paths=source_relative api/proto/<domain>/v1/<domain>.proto
+```
+
+**AI Agent Requirements**:
+- AI agents MUST use `protojson` for JSON serialization (NOT `encoding/json`)
+- AI agents MUST use `protocmp.Transform()` with `cmp.Diff()` for test comparisons
+- AI agents MUST preserve field numbers and MUST NOT reuse deleted field numbers
+
+### Hybrid Workflow: OpenAPI → Protobuf (Optional)
+
+For projects needing both REST and gRPC, generate Protobuf from OpenAPI using `openapi2proto`.
+
+**Prerequisites**:
+- `openapi2proto` MUST be installed: `go install github.com/NYTimes/openapi2proto/cmd/openapi2proto@latest`
+- `protoc` MUST be installed with `protoc-gen-go` plugin
+
+**Workflow**:
+1. **Define Contract**: Create OpenAPI files in `api/openapi/` (single source of truth)
+2. **Generate Proto**: Run `openapi2proto` to generate `.proto` files (NEVER hand-edit)
+3. **Generate Go Code**: Run `protoc` to generate Go protobuf structs
+4. **Use in Code**: Import generated packages, use typed structs throughout
+5. **Version**: Stabilize field numbers via OpenAPI `x-proto-tag`
+
+**Tooling**:
+- Use `openapi2proto` (github.com/NYTimes/openapi2proto) to generate `.proto` from OpenAPI
+- Generate messages only with `-skip-rpcs` unless adopting grpc-gateway
+- Use `x-proto-tag` (in OpenAPI) to stabilize field numbers
+- Use `x-global-options` (in OpenAPI) to set protobuf options such as `go_package`
+
+**`go:generate` example**:
+```go
+//go:generate go run github.com/NYTimes/openapi2proto/cmd/openapi2proto -spec ../../openapi/pim.json -skip-rpcs -out ../proto/pim/v1/pim.proto
+//go:generate protoc --go_out=. --go_opt=paths=source_relative ../proto/pim/v1/pim.proto
+```
+
+**AI Agent Requirements**:
+- AI agents MUST treat OpenAPI as the source of truth (NEVER hand-edit generated `.proto`)
+- AI agents MUST regenerate `.proto` whenever OpenAPI files change
+- AI agents MUST preserve `x-proto-tag` assignments and MUST NOT reuse removed field numbers
 
 ### Test Database Management
 
@@ -441,6 +648,8 @@ func TestProductCreate(t *testing.T) {
 - Business logic MUST be Go interfaces (service layer)
 - Services MUST NOT depend on HTTP types (only `context.Context` allowed)
 - Handlers MUST be thin wrappers delegating to services
+- **ALL validation MUST be in services** (handlers MUST NOT validate input, including empty/nil checks)
+- Handlers MUST ONLY: decode request body, extract path parameters, call service, write response
 - Services and handlers MUST be in public packages (NOT `internal/`) for reusability
 - External dependencies MUST be injected via builder pattern
 - Services MUST use builder pattern: `NewService(db).WithLogger(log).Build()`
@@ -486,10 +695,12 @@ type ProductService interface {
 // ✅ CORRECT: Services/handlers in public packages
 github.com/theplant/myapp/
 ├── api/
-│   ├── proto/pim/v1/  // PUBLIC - protobuf source files
-│   │   └── product.proto
+│   ├── openapi/  // PUBLIC - OpenAPI specifications (single source of truth)
+│   │   └── pim.json
+│   ├── proto/pim/v1/  // PUBLIC - protobuf source files (generated from OpenAPI)
+│   │   └── pim.proto
 │   └── gen/pim/v1/    // PUBLIC - generated protobuf (services return these)
-│       └── product.pb.go
+│       └── pim.pb.go
 ├── services/          // PUBLIC - reusable by external apps
 │   ├── product_service.go
 │   └── errors.go
@@ -652,32 +863,29 @@ func DecodeProtoJSON(r *http.Request, msg proto.Message) error {
 
 func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
     var req pb.CreateProductRequest
-    if err := DecodeProtoJSON(r, &req); err != nil {  // ✅ Use protojson (accepts camelCase)
-        RespondWithError(w, Errors.InvalidRequest)  // Principle XIII
+    if err := DecodeProtoJSON(r, &req); err != nil {
+        RespondWithError(w, Errors.InvalidRequest, err)  // Principle XIII: Pass error for details
         return
     }
 
     product, err := h.service.Create(r.Context(), &req)
     if err != nil {
-        HandleServiceError(w, err)  // Principle XIII: Automatic error mapping
+        HandleServiceError(w, err)  // Principle XIII: Automatic error mapping with details
         return
     }
 
-    RespondWithProto(w, http.StatusCreated, product)  // ✅ Use protojson (returns camelCase)
+    RespondWithProto(w, http.StatusCreated, product)
 }
 
 // Example handler using path parameter extraction
+// ✅ Handler is thin wrapper: extract params, call service, write response
+// ✅ NO validation in handler - service validates req.Id
 func (h *ProductHandler) Get(w http.ResponseWriter, r *http.Request) {
     ctx := r.Context()
-
-    // Extract path parameter using r.PathValue() (Go 1.22+)
-    id := r.PathValue("id")
-    if id == "" {
-        http.Error(w, "Missing product ID", http.StatusBadRequest)
-        return
-    }
+    id := r.PathValue("id")  // Extract path parameter (Go 1.22+)
 
     // Principle X: Service methods MUST use protobuf structs (NOT primitives)
+    // Principle X: Service validates req.Id (handler does NOT check if empty)
     product, err := h.service.Get(ctx, &pb.GetProductRequest{Id: id})
     if err != nil {
         HandleServiceError(w, err)  // Principle XIII: Use error mapping
@@ -818,21 +1026,21 @@ func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
     span.SetTag("http.method", r.Method)
 
     var req pb.CreateProductRequest
-    if err := DecodeProtoJSON(r, &req); err != nil {  // ✅ Use protojson (accepts camelCase)
+    if err := DecodeProtoJSON(r, &req); err != nil {
         span.SetTag("error", true)
-        RespondWithError(w, Errors.InvalidRequest)
+        RespondWithError(w, Errors.InvalidRequest, err)  // Principle XIII: Pass error for details
         return
     }
 
     product, err := h.service.Create(r.Context(), &req)
     if err != nil {
         span.SetTag("error", true)
-        HandleServiceError(w, err)  // Principle XIII
+        HandleServiceError(w, err)  // Principle XIII: Automatic mapping with details
         return
     }
 
     span.SetTag("http.status_code", http.StatusCreated)
-    RespondWithProto(w, http.StatusCreated, product)  // ✅ Use protojson (returns camelCase)
+    RespondWithProto(w, http.StatusCreated, product)
 }
 
 // Service - child span
@@ -907,17 +1115,18 @@ func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
     ctx := r.Context()  // Principle XII: Extract context
 
     var req pb.CreateProductRequest
-    if err := DecodeProtoJSON(r, &req); err != nil {  // ✅ Use protojson (accepts camelCase)
-        RespondWithError(w, Errors.InvalidRequest)
+    if err := DecodeProtoJSON(r, &req); err != nil {
+        span.SetTag("error", true)
+        RespondWithError(w, Errors.InvalidRequest, err)  // Principle XIII: Pass error for details
         return
     }
 
     product, err := h.service.Create(ctx, &req)  // Propagate context
     if err != nil {
-        HandleServiceError(w, err)  // Principle XIII: Handles context.Canceled automatically
+        HandleServiceError(w, err)  // Principle XIII: Handles context.Canceled with details
         return
     }
-    RespondWithProto(w, http.StatusCreated, product)  // ✅ Use protojson (returns camelCase)
+    RespondWithProto(w, http.StatusCreated, product)
 }
 
 // Long-running - check cancellation periodically
@@ -944,6 +1153,7 @@ func (s *productService) BulkUpdate(ctx context.Context, updates []*pb.ProductUp
 **Two-Layer Strategy**:
 - **Service Layer**: Sentinel errors (package-level vars) with `fmt.Errorf("%w")` wrapping
 - **HTTP Layer**: Singleton error code struct with automatic service error mapping
+- **Environment-Aware Details**: Full error chain exposed in dev, hidden in production via `HIDE_ERROR_DETAILS=true`
 - **Testing**: ALL errors (sentinel + HTTP codes) MUST have test cases
 
 **Service Layer**:
@@ -963,6 +1173,7 @@ var (
 message ErrorResponse {
     string code = 1;     // e.g., "PRODUCT_NOT_FOUND"
     string message = 2;  // e.g., "Product not found"
+    string details = 3;  // Full error chain (empty in production)
 }
 ```
 
@@ -976,30 +1187,64 @@ type ErrorCode struct {
 }
 
 var Errors = struct {
-    MissingRequired ErrorCode
-    ProductNotFound ErrorCode
-    DuplicateSKU    ErrorCode
-    InternalError   ErrorCode
+    MissingRequired  ErrorCode
+    ProductNotFound  ErrorCode
+    DuplicateSKU     ErrorCode
+    RequestCancelled ErrorCode
+    RequestTimeout   ErrorCode
+    InternalError    ErrorCode
 }{
-    MissingRequired: ErrorCode{"MISSING_REQUIRED", "Required field missing", 400, services.ErrMissingRequired},
-    ProductNotFound: ErrorCode{"PRODUCT_NOT_FOUND", "Product not found", 404, services.ErrProductNotFound},
-    DuplicateSKU:    ErrorCode{"DUPLICATE_SKU", "SKU already exists", 409, services.ErrDuplicateSKU},
-    InternalError:   ErrorCode{"INTERNAL_ERROR", "Internal server error", 500, nil},
+    MissingRequired:  ErrorCode{"MISSING_REQUIRED", "Required field missing", 400, services.ErrMissingRequired},
+    ProductNotFound:  ErrorCode{"PRODUCT_NOT_FOUND", "Product not found", 404, services.ErrProductNotFound},
+    DuplicateSKU:     ErrorCode{"DUPLICATE_SKU", "SKU already exists", 409, services.ErrDuplicateSKU},
+    RequestCancelled: ErrorCode{"REQUEST_CANCELLED", "Request cancelled", 499, context.Canceled},
+    RequestTimeout:   ErrorCode{"REQUEST_TIMEOUT", "Request timeout", 504, context.DeadlineExceeded},
+    InternalError:    ErrorCode{"INTERNAL_ERROR", "Internal server error", 500, nil},
 }
 
-// RespondWithError sends error response using protobuf ErrorResponse
-func RespondWithError(w http.ResponseWriter, errCode ErrorCode) {
+// Environment-aware error details configuration
+type errorResponseConfig struct {
+    hideErrorDetails bool
+}
+
+var defaultErrorConfig = &errorResponseConfig{hideErrorDetails: false}
+
+// SetHideErrorDetails configures whether to hide error details (call at startup)
+func SetHideErrorDetails(hide bool) {
+    defaultErrorConfig.hideErrorDetails = hide
+}
+
+// RespondWithError sends error response with optional details
+// In dev (default): includes full error chain in details field
+// In production (HIDE_ERROR_DETAILS=true): details field is empty
+func RespondWithError(w http.ResponseWriter, errCode ErrorCode, err error) {
     w.Header().Set("Content-Type", "application/json")
     w.WriteHeader(errCode.HTTPStatus)
-    errResp := &pb.ErrorResponse{Code: errCode.Code, Message: errCode.Message}
-    data, _ := protojson.Marshal(errResp)  // ✅ Use protojson for error responses too
+
+    errResp := &pb.ErrorResponse{
+        Code:    errCode.Code,
+        Message: errCode.Message,
+    }
+
+    // Include full error chain unless hidden (for frontend/AI debugging)
+    if !defaultErrorConfig.hideErrorDetails && err != nil {
+        errResp.Details = err.Error()
+    }
+
+    data, _ := protojson.Marshal(errResp)
     w.Write(data)
 }
 ```
 
-**Service - Wrap Errors**:
+**Service - Validation and Error Wrapping**:
 ```go
+// ✅ Service validates ALL input (Principle X: handlers MUST NOT validate)
 func (s *productService) Get(ctx context.Context, req *pb.GetProductRequest) (*pb.Product, error) {
+    // Principle X: ALL validation in service (handler just extracts path param)
+    if req.Id == "" {
+        return nil, fmt.Errorf("product id: %w", ErrMissingRequired)
+    }
+
     var product Product
     if err := s.db.WithContext(ctx).First(&product, "id = ?", req.Id).Error; err != nil {
         if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -1016,39 +1261,67 @@ func (s *productService) Get(ctx context.Context, req *pb.GetProductRequest) (*p
 func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
     var req pb.CreateProductRequest
     if err := DecodeProtoJSON(r, &req); err != nil {  // ✅ Use protojson (accepts camelCase)
-        RespondWithError(w, Errors.InvalidRequest)
+        RespondWithError(w, Errors.InvalidRequest, err)  // Pass error for details
         return
     }
 
     product, err := h.service.Create(r.Context(), &req)
     if err != nil {
-        HandleServiceError(w, err)  // Automatic mapping!
+        HandleServiceError(w, err)  // Automatic mapping with details!
         return
     }
 
     RespondWithProto(w, http.StatusCreated, product)  // ✅ Use protojson (returns camelCase)
 }
 
-// Automatically maps service errors to HTTP responses
+// Automatically maps service errors to HTTP responses with details
 func HandleServiceError(w http.ResponseWriter, err error) {
     // Check context errors first (Principle XII)
     if errors.Is(err, context.Canceled) {
-        http.Error(w, "Request cancelled", 499)
+        RespondWithError(w, Errors.RequestCanceled, err)
         return
     }
     if errors.Is(err, context.DeadlineExceeded) {
-        http.Error(w, "Request timeout", 504)
+        RespondWithError(w, Errors.RequestTimeout, err)
         return
     }
 
     // Check service error mapping
     for _, errCode := range AllErrors() {
         if errCode.ServiceErr != nil && errors.Is(err, errCode.ServiceErr) {
-            RespondWithError(w, errCode)
+            RespondWithError(w, errCode, err)  // Pass original error for details
             return
         }
     }
-    RespondWithError(w, Errors.InternalError)
+    RespondWithError(w, Errors.InternalError, err)
+}
+```
+
+**Startup Configuration**:
+```go
+// cmd/api/main.go
+func main() {
+    // Set error details visibility from environment
+    if os.Getenv("HIDE_ERROR_DETAILS") == "true" {
+        handlers.SetHideErrorDetails(true)
+    }
+    // ... rest of setup
+}
+```
+
+**Example Responses**:
+```json
+// Development (default): full error chain visible for debugging
+{
+    "code": "PRODUCT_NOT_FOUND",
+    "message": "Product not found",
+    "details": "get product abc-123: product not found"
+}
+
+// Production (HIDE_ERROR_DETAILS=true): details hidden for security
+{
+    "code": "PRODUCT_NOT_FOUND",
+    "message": "Product not found"
 }
 ```
 
@@ -1105,19 +1378,28 @@ func TestProductAPI_Create_DuplicateSKU(t *testing.T) {
 - ✅ Wrapping creates error breadcrumb trail
 - ✅ ALL errors must be tested
 - ✅ Error assertions use definitions (maintainable, refactoring-safe)
+- ✅ Environment-aware details for debugging (dev) vs security (production)
+
+**AI Agent Requirements**:
+- AI agents MUST read the `details` field when debugging API errors
+- AI agents MUST NOT assume `details` is always present (production hides it)
+- AI agents SHOULD suggest setting `HIDE_ERROR_DETAILS=true` for production deployments
 
 
 ## Technology Stack
 
 - **Language**: Go 1.25+ (recommend latest stable)
 - **Database**: PostgreSQL 15+ (with JSONB support)
-- **HTTP Framework**: Standard library `net/http` using `http.ServeMux`
+- **HTTP Framework**: Standard library `net/http` using `http.ServeMux` (Go 1.22+)
 - **Database Access**: GORM (gorm.io/gorm with gorm.io/driver/postgres)
 - **Distributed Tracing**: OpenTracing (github.com/opentracing/opentracing-go)
-- **Protocol Buffers**: protoc compiler, protoc-gen-go, protoc-gen-go-grpc
+- **OpenAPI Contract**: OpenAPI v3 (YAML preferred, JSON supported)
+- **OpenAPI → Go Code**: oapi-codegen (github.com/oapi-codegen/oapi-codegen) - generates types, server interfaces, and clients
+- **Protocol Buffers** (optional): protoc compiler, protoc-gen-go, protoc-gen-go-grpc
+- **OpenAPI → Protobuf** (optional): openapi2proto (github.com/NYTimes/openapi2proto) - for hybrid REST/gRPC
 - **Protobuf JSON**: google.golang.org/protobuf/encoding/protojson (for camelCase JSON serialization)
 - **Testing**: Standard library `testing` package with `httptest`
-- **Test Comparison**: google/go-cmp with protocmp for protobuf message assertions
+- **Test Comparison**: google/go-cmp (with protocmp for protobuf message assertions)
 - **Test Database**: testcontainers-go with PostgreSQL module (automatic Docker container management)
 - **Migration Tool**: GORM AutoMigrate (for development and testing)
 
@@ -1190,5 +1472,4 @@ All pull requests MUST be reviewed against these constitutional requirements:
 
 This constitution is version-controlled alongside code and follows the same review process as code changes.
 
-**Version**: 1.12.0 | **Ratified**: 2025-11-20 | **Last Amended**: 2025-12-15
-
+**Version**: 2.1.0 | **Ratified**: 2025-11-20 | **Last Amended**: 2025-12-15

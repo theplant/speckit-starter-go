@@ -189,7 +189,6 @@ Given that feature description, do this:
            | B      | [Second suggested answer] | [What this means for the feature] |
            | C      | [Third suggested answer] | [What this means for the feature] |
            | Custom | Provide your own answer | [Explain how to provide custom input] |
-
            **Your choice**: _[Wait for user response]_
            ```
 
