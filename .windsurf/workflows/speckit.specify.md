@@ -73,11 +73,23 @@ The text the user typed after `/speckit.specify` in the triggering message **is*
 
 Given that feature description, do this:
 
-1. Load `.specify/templates/spec-template.md` to understand required sections.
+1. **Generate a concise short name** (2-4 words) for the branch:
+   - Analyze the feature description and extract the most meaningful keywords
+   - Create a 2-4 word short name that captures the essence of the feature
+   - Use action-noun format when possible (e.g., "add-user-auth", "fix-payment-bug")
+   - Preserve technical terms and acronyms (OAuth2, API, JWT, etc.)
+   - Keep it concise but descriptive enough to understand the feature at a glance
+   - Examples:
+     - "I want to add user authentication" → "user-auth"
+     - "Implement OAuth2 integration for the API" → "oauth2-api-integration"
+     - "Create a dashboard for analytics" → "analytics-dashboard"
+     - "Fix payment processing timeout bug" → "fix-payment-timeout"
 
-2. **Read the constitution for plain English rules**: Load `.specify/memory/constitution.md` and find Principle XIV (Plain English Writing Style). Follow those rules strictly.
+2. Load `.specify/templates/spec-template.md` to understand required sections.
 
-3. Follow this execution flow:
+3. **Read the constitution for plain English rules**: Load `.specify/memory/constitution.md` and find Principle XIV (Plain English Writing Style). Follow those rules strictly.
+
+4. Follow this execution flow:
 
     1. Parse user description from Input
        If empty: ERROR "No feature description provided"
@@ -103,11 +115,11 @@ Given that feature description, do this:
     7. Identify Key Entities (if data involved)
     8. Return: SUCCESS (spec ready for planning)
 
-4. Write the specification in PLAIN ENGLISH to SPEC_FILE using the template structure, replacing placeholders with concrete details derived from the feature description (arguments) while preserving section order and headings.
+5. Write the specification in PLAIN ENGLISH to `specs/<short-name>.md` using the template structure, replacing placeholders with concrete details derived from the feature description (arguments) while preserving section order and headings.
 
-5. **Specification Quality Validation**: After writing the initial spec, validate it against quality criteria:
+6. **Specification Quality Validation**: After writing the initial spec, validate it against quality criteria:
 
-   a. **Create Spec Quality Checklist**: Generate a checklist file at `FEATURE_DIR/checklists/requirements.md` using the checklist template structure with these validation items:
+   a. **Create Spec Quality Checklist**: Generate a checklist file at `specs/checklists/<short-name>-requirements.md` using the checklist template structure with these validation items:
 
       ```markdown
       # Specification Quality Checklist: [FEATURE NAME]
