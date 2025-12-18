@@ -1,6 +1,6 @@
 ---
 description: Create or update the feature specification from a natural language feature description.
-handoffs: 
+handoffs:
   - label: Build Technical Plan
     agent: speckit.plan
     prompt: Create a plan for the spec. I am building with...
@@ -18,58 +18,66 @@ $ARGUMENTS
 
 You **MUST** consider the user input before proceeding (if not empty).
 
+## Plain English Rules (CRITICAL - READ FIRST)
+
+**Before writing ANY spec content, you MUST follow these rules. This is the key difference from `/speckit.specify`.**
+
+### Forbidden Phrases → Plain English Replacements
+
+| ❌ Never Use | ✅ Use Instead |
+|--------------|----------------|
+| "enforce consistent validation" | "all products follow the same rules" |
+| "maintain backward compatibility" | "existing products keep their old values" |
+| "downstream system protection" | "Search and OMS always get valid data" |
+| "improve authoring experience" | "make the form easier to use" |
+| "schema-first product structure" | "define fields once, reuse everywhere" |
+| "participate in search/filter logic" | "show up in search results and filters" |
+| "extensibility" | "add new features later" |
+| "idempotent" | "running twice gives the same result" |
+| "atomicity" | "all-or-nothing" |
+| "data integrity" | "data stays correct" |
+| "scalability" | "handle more users/data" |
+| "latency" | "response time" or "how fast" |
+| "throughput" | "how many requests per second" |
+| "resilience" | "keep working when things fail" |
+| "orchestration" | "coordinate multiple steps" |
+| "abstraction" | "hide the details" |
+| "encapsulation" | "keep things separate" |
+| "polymorphism" | (don't use this word at all) |
+| "middleware" | "code that runs in between" |
+| "payload" | "data" or "request body" |
+| "endpoint" | "API" or "URL" |
+| "serialization" | "convert to JSON" |
+| "deserialization" | "read from JSON" |
+
+### Writing Guidelines
+
+1. **Use simple words**: If a 10-year-old can't understand it, rewrite it
+2. **Short sentences**: Under 20 words per sentence
+3. **Concrete outcomes**: "so that users can see their orders" not "so that visibility is improved"
+4. **Active voice**: "System saves the file" not "The file is saved by the system"
+5. **No acronyms without explanation**: First use must spell it out
+
+### Self-Check (Do This Before Finishing)
+
+After writing the spec, read every sentence and ask:
+- Would my non-technical friend understand this?
+- Can I say this with fewer words?
+- Is there a simpler word I can use?
+
+If the answer is "no" to any question, rewrite that sentence.
+
 ## Outline
 
 The text the user typed after `/speckit.specify` in the triggering message **is** the feature description. Assume you always have it available in this conversation even if `$ARGUMENTS` appears literally below. Do not ask the user to repeat it unless they provided an empty command.
 
 Given that feature description, do this:
 
-1. **Generate a concise short name** (2-4 words) for the branch:
-   - Analyze the feature description and extract the most meaningful keywords
-   - Create a 2-4 word short name that captures the essence of the feature
-   - Use action-noun format when possible (e.g., "add-user-auth", "fix-payment-bug")
-   - Preserve technical terms and acronyms (OAuth2, API, JWT, etc.)
-   - Keep it concise but descriptive enough to understand the feature at a glance
-   - Examples:
-     - "I want to add user authentication" → "user-auth"
-     - "Implement OAuth2 integration for the API" → "oauth2-api-integration"
-     - "Create a dashboard for analytics" → "analytics-dashboard"
-     - "Fix payment processing timeout bug" → "fix-payment-timeout"
+1. Load `.specify/templates/spec-template.md` to understand required sections.
 
-2. **Check for existing branches before creating new one**:
-   
-   a. First, fetch all remote branches to ensure we have the latest information:
-      ```bash
-      git fetch --all --prune
-      ```
-   
-   b. Find the highest feature number across all sources for the short-name:
-      - Remote branches: `git ls-remote --heads origin | grep -E 'refs/heads/[0-9]+-<short-name>$'`
-      - Local branches: `git branch | grep -E '^[* ]*[0-9]+-<short-name>$'`
-      - Specs directories: Check for directories matching `specs/[0-9]+-<short-name>`
-   
-   c. Determine the next available number:
-      - Extract all numbers from all three sources
-      - Find the highest number N
-      - Use N+1 for the new branch number
-   
-   d. Run the script `.specify/scripts/bash/create-new-feature.sh --json "$ARGUMENTS"` with the calculated number and short-name:
-      - Pass `--number N+1` and `--short-name "your-short-name"` along with the feature description
-      - Bash example: `.specify/scripts/bash/create-new-feature.sh --json "$ARGUMENTS" --json --number 5 --short-name "user-auth" "Add user authentication"`
-      - PowerShell example: `.specify/scripts/bash/create-new-feature.sh --json "$ARGUMENTS" -Json -Number 5 -ShortName "user-auth" "Add user authentication"`
-   
-   **IMPORTANT**:
-   - Check all three sources (remote branches, local branches, specs directories) to find the highest number
-   - Only match branches/directories with the exact short-name pattern
-   - If no existing branches/directories found with this short-name, start with number 1
-   - You must only ever run this script once per feature
-   - The JSON is provided in the terminal as output - always refer to it to get the actual content you're looking for
-   - The JSON output will contain BRANCH_NAME and SPEC_FILE paths
-   - For single quotes in args like "I'm Groot", use escape syntax: e.g 'I'\''m Groot' (or double-quote if possible: "I'm Groot")
+2. **Read the constitution for plain English rules**: Load `.specify/memory/constitution.md` and find Principle XIV (Plain English Writing Style). Follow those rules strictly.
 
-3. Load `.specify/templates/spec-template.md` to understand required sections.
-
-4. Follow this execution flow:
+3. Follow this execution flow:
 
     1. Parse user description from Input
        If empty: ERROR "No feature description provided"
@@ -95,28 +103,36 @@ Given that feature description, do this:
     7. Identify Key Entities (if data involved)
     8. Return: SUCCESS (spec ready for planning)
 
-5. Write the specification to SPEC_FILE using the template structure, replacing placeholders with concrete details derived from the feature description (arguments) while preserving section order and headings.
+4. Write the specification in PLAIN ENGLISH to SPEC_FILE using the template structure, replacing placeholders with concrete details derived from the feature description (arguments) while preserving section order and headings.
 
-6. **Specification Quality Validation**: After writing the initial spec, validate it against quality criteria:
+5. **Specification Quality Validation**: After writing the initial spec, validate it against quality criteria:
 
    a. **Create Spec Quality Checklist**: Generate a checklist file at `FEATURE_DIR/checklists/requirements.md` using the checklist template structure with these validation items:
 
       ```markdown
       # Specification Quality Checklist: [FEATURE NAME]
-      
+
       **Purpose**: Validate specification completeness and quality before proceeding to planning
       **Created**: [DATE]
       **Feature**: [Link to spec.md]
-      
+
       ## Content Quality
-      
+
       - [ ] No implementation details (languages, frameworks, APIs)
       - [ ] Focused on user value and business needs
       - [ ] Written for non-technical stakeholders
       - [ ] All mandatory sections completed
-      
+      - [ ] **Written in plain English (no jargon)**
+
+      ## Plain English Check
+
+      - [ ] No forbidden phrases from the Plain English Rules table
+      - [ ] All sentences under 20 words
+      - [ ] User story outcomes are concrete (not abstract)
+      - [ ] A non-technical person could understand every section
+
       ## Requirement Completeness
-      
+
       - [ ] No [NEEDS CLARIFICATION] markers remain
       - [ ] Requirements are testable and unambiguous
       - [ ] Success criteria are measurable
@@ -125,21 +141,22 @@ Given that feature description, do this:
       - [ ] Edge cases are identified
       - [ ] Scope is clearly bounded
       - [ ] Dependencies and assumptions identified
-      
+
       ## Feature Readiness
-      
+
       - [ ] All functional requirements have clear acceptance criteria
       - [ ] User scenarios cover primary flows
       - [ ] Feature meets measurable outcomes defined in Success Criteria
       - [ ] No implementation details leak into specification
-      
+
       ## Notes
-      
+
       - Items marked incomplete require spec updates before `/speckit.clarify` or `/speckit.plan`
       ```
 
    b. **Run Validation Check**: Review the spec against each checklist item:
       - For each item, determine if it passes or fails
+      - **Pay special attention to Plain English Check items**
       - Document specific issues found (quote relevant spec sections)
 
    c. **Handle Validation Results**:
@@ -159,20 +176,20 @@ Given that feature description, do this:
 
            ```markdown
            ## Question [N]: [Topic]
-           
+
            **Context**: [Quote relevant spec section]
-           
+
            **What we need to know**: [Specific question from NEEDS CLARIFICATION marker]
-           
+
            **Suggested Answers**:
-           
+
            | Option | Answer | Implications |
            |--------|--------|--------------|
            | A      | [First suggested answer] | [What this means for the feature] |
            | B      | [Second suggested answer] | [What this means for the feature] |
            | C      | [Third suggested answer] | [What this means for the feature] |
            | Custom | Provide your own answer | [Explain how to provide custom input] |
-           
+
            **Your choice**: _[Wait for user response]_
            ```
 
@@ -189,9 +206,9 @@ Given that feature description, do this:
 
    d. **Update Checklist**: After each validation iteration, update the checklist file with current pass/fail status
 
-7. Report completion with branch name, spec file path, checklist results, and readiness for the next phase (`/speckit.clarify` or `/speckit.plan`).
+6. Report completion with spec file path, checklist results, and readiness for the next phase (`/speckit.clarify` or `/speckit.plan`).
 
-**NOTE:** The script creates and checks out the new branch and initializes the spec file before writing.
+**NOTE:** The script initializes the spec file before writing.
 
 ## General Guidelines
 
@@ -200,6 +217,7 @@ Given that feature description, do this:
 - Focus on **WHAT** users need and **WHY**.
 - Avoid HOW to implement (no tech stack, APIs, code structure).
 - Written for business stakeholders, not developers.
+- **USE PLAIN ENGLISH - this is the key requirement of this workflow**
 - DO NOT create any checklists that are embedded in the spec. That will be a separate command.
 
 ### Section Requirements
@@ -220,7 +238,8 @@ When creating this spec from a user prompt:
    - Lack any reasonable default
 4. **Prioritize clarifications**: scope > security/privacy > user experience > technical details
 5. **Think like a tester**: Every vague requirement should fail the "testable and unambiguous" checklist item
-6. **Common areas needing clarification** (only if no reasonable default exists):
+6. **WRITE IN PLAIN ENGLISH**: Re-read every sentence and simplify
+7. **Common areas needing clarification** (only if no reasonable default exists):
    - Feature scope and boundaries (include/exclude specific use cases)
    - User types and permissions (if multiple conflicting interpretations possible)
    - Security/compliance requirements (when legally/financially significant)
@@ -241,6 +260,7 @@ Success criteria must be:
 2. **Technology-agnostic**: No mention of frameworks, languages, databases, or tools
 3. **User-focused**: Describe outcomes from user/business perspective, not system internals
 4. **Verifiable**: Can be tested/validated without knowing implementation details
+5. **Written in plain English**: No jargon
 
 **Good examples**:
 
