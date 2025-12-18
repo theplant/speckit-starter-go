@@ -43,7 +43,7 @@ your-project/
 │   └── scripts/               # Helper scripts
 └── .windsurf/
     └── workflows/
-        ├── theplant.tdd.md              # Test-First Development
+        ├── theplant.integration-test.md  # Integration testing
         ├── theplant.bugfix.md           # Reproduction-first debugging
         ├── theplant.service.md          # Service layer architecture
         ├── theplant.routes.md           # HTTP routing setup
@@ -95,7 +95,7 @@ Use these workflows in Windsurf with `/theplant.<workflow>` commands:
 
 | Workflow | Purpose |
 |----------|--------|
-| `/theplant.tdd` | Test-First Development for new features |
+| `/theplant.integration-test` | Integration tests with real database |
 | `/theplant.bugfix` | Reproduction-first debugging |
 | `/theplant.service` | Create services with builder pattern |
 | `/theplant.routes` | Setup HTTP routing |

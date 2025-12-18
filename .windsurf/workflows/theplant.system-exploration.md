@@ -324,7 +324,7 @@ func TestProductAPI(t *testing.T) {
 
 ## See Also
 
-- `/theplant.tdd` - Test-First Development workflow
+- `/theplant.integration-test` - Integration testing workflow
 - `/theplant.bugfix` - Bug fix with reproduction-first debugging
 - `/theplant.service` - Service layer architecture
 - `/theplant.errors` - Error handling strategy

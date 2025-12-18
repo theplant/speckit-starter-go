@@ -205,6 +205,6 @@ When tests fail:
 ## See Also
 
 - `/theplant.bugfix` - Bug fix workflow with reproduction-first debugging
-- `/theplant.tdd` - Test-First Development workflow
+- `/theplant.integration-test` - Integration testing workflow
 - `/theplant.system-exploration` - Trace code paths before writing tests
 - `/theplant.errors` - Error handling strategy
