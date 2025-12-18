@@ -29,6 +29,241 @@ Write integration tests following Principle INTEGRATION_TESTING - use real Postg
 
 **Rationale**: Integration tests catch real-world issues mocks cannot (constraints, transactions, serialization). Real fixtures validate actual database behavior. Mocks in implementation code create fake abstraction layers that hide real behavior.
 
+## Principle COMPLETE_TEST_DATA: Fill All Struct Fields Completely
+
+**CRITICAL**: When creating test input data or expected response structs, you MUST:
+
+1. **Fill ALL fields** - Never leave any field empty, nil, or with zero values unless explicitly testing that scenario
+2. **Nested structs MUST be fully populated** - Recursively fill all nested struct fields down to primitive values
+3. **Array/slice fields MUST have at least 2 elements** - Never use empty arrays `[]` unless testing empty case
+4. **Each array element MUST be fully populated** - Every element in arrays must have all its fields filled
+5. **Use realistic production-like values** - Values should represent real-world data, not placeholder text
+6. **Pointer fields MUST point to fully populated structs** - No nil pointers unless testing nil case
+
+### Why Complete Test Data Matters
+
+| Problem | Consequence |
+|---------|-------------|
+| Empty arrays `[]` | Serialization bugs not caught (JSON `[]` vs `null`) |
+| Nil nested structs | Nil pointer dereference bugs missed |
+| Missing fields | Default value bugs not detected |
+| Single-element arrays | Off-by-one and iteration bugs missed |
+| Placeholder values | Data validation bugs not caught |
+
+### Example: WRONG vs CORRECT
+
+```go
+// ❌ WRONG: Empty arrays, missing nested fields, placeholder values
+createInput := pim.ProductCreateInput{
+    Sku:         "TEST-001",
+    Name:        pim.LocalizedValue{"en-US": "Test"},  // Only 1 locale
+    Slug:        "test",
+    Status:      pim.Draft,
+    Tags:        []string{},           // ❌ Empty array
+    CategoryIds: []string{},           // ❌ Empty array
+    MediaIds:    []string{},           // ❌ Empty array
+    Media:       []pim.ProductMedia{}, // ❌ Empty array
+    Attributes:  []pim.ProductAttribute{}, // ❌ Empty array
+    Variants:    []pim.ProductVariant{},   // ❌ Empty array
+    Pricing:     pim.ProductPricing{Price: 10, Currency: "USD"}, // Missing optional fields
+    Seo:         pim.ProductSEO{},     // ❌ Empty nested struct
+}
+
+// ✅ CORRECT: All fields filled, arrays with 2+ elements, nested structs complete
+createInput := pim.ProductCreateInput{
+    Sku:  "LAPTOP-PRO-15-2024",
+    Name: pim.LocalizedValue{
+        "en-US": "Professional Laptop 15-inch",
+        "zh-CN": "专业笔记本电脑15寸",
+    },
+    Slug:   "professional-laptop-15-inch",
+    Status: pim.Draft,
+    ShortDescription: pim.LocalizedValue{
+        "en-US": "High-performance laptop for professionals",
+        "zh-CN": "专业人士高性能笔记本",
+    },
+    LongDescription: pim.LocalizedValue{
+        "en-US": "The Professional Laptop 15-inch features cutting-edge technology...",
+        "zh-CN": "专业笔记本电脑15寸采用尖端技术...",
+    },
+    Tags:        []string{"electronics", "laptop", "professional"},
+    CategoryIds: []string{category1.ID, category2.ID},
+    MediaIds:    []string{media1.ID, media2.ID},
+    Media: []pim.ProductMedia{
+        {
+            MediaId:  media1.ID,
+            Position: 1,
+            Alt:      "Laptop front view",
+            Role:     "primary",
+        },
+        {
+            MediaId:  media2.ID,
+            Position: 2,
+            Alt:      "Laptop side view",
+            Role:     "gallery",
+        },
+    },
+    Attributes: []pim.ProductAttribute{
+        {
+            Code:  "screen_size",
+            Value: "15.6 inches",
+        },
+        {
+            Code:  "processor",
+            Value: "Intel Core i7-12700H",
+        },
+    },
+    Variants: []pim.ProductVariant{
+        {
+            Sku:    "LAPTOP-PRO-15-2024-8GB",
+            Name:   pim.LocalizedValue{"en-US": "8GB RAM Variant", "zh-CN": "8GB内存版本"},
+            Status: pim.Active,
+            Pricing: pim.ProductPricing{
+                Price:         999.99,
+                ComparePrice:  1199.99,
+                CostPrice:     750.00,
+                Currency:      "USD",
+            },
+            Attributes: []pim.ProductAttribute{
+                {Code: "ram", Value: "8GB"},
+                {Code: "storage", Value: "256GB SSD"},
+            },
+        },
+        {
+            Sku:    "LAPTOP-PRO-15-2024-16GB",
+            Name:   pim.LocalizedValue{"en-US": "16GB RAM Variant", "zh-CN": "16GB内存版本"},
+            Status: pim.Active,
+            Pricing: pim.ProductPricing{
+                Price:         1299.99,
+                ComparePrice:  1499.99,
+                CostPrice:     950.00,
+                Currency:      "USD",
+            },
+            Attributes: []pim.ProductAttribute{
+                {Code: "ram", Value: "16GB"},
+                {Code: "storage", Value: "512GB SSD"},
+            },
+        },
+    },
+    Pricing: pim.ProductPricing{
+        Price:        999.99,
+        ComparePrice: 1199.99,
+        CostPrice:    750.00,
+        Currency:     "USD",
+    },
+    Seo: pim.ProductSEO{
+        MetaTitle:       "Professional Laptop 15-inch | Best Performance",
+        MetaDescription: "Buy the Professional Laptop 15-inch with Intel Core i7...",
+        MetaKeywords:    []string{"laptop", "professional", "intel", "15-inch"},
+        CanonicalUrl:    "https://example.com/products/professional-laptop-15-inch",
+    },
+}
+```
+
+### Checklist Before Submitting Test Code
+
+- [ ] Every struct field has a non-zero value (unless testing zero/nil case)
+- [ ] Every array/slice has at least 2 elements
+- [ ] Every nested struct is fully populated
+- [ ] Every array element has all its fields filled
+- [ ] Values are realistic (not "test", "foo", "bar")
+- [ ] LocalizedValue maps have at least 2 locales
+
+## Principle EXPECTED_FROM_INPUT: Expected Values Must Come From Input, Not Results
+
+**CRITICAL**: When building expected response structs for comparison, you MUST:
+
+1. **NEVER copy values from execution results into expected structs** - This defeats the purpose of testing
+2. **Build expected structs entirely from input data** - Expected values should be derived from what you sent
+3. **Use `cmpopts.IgnoreFields()` for generated/dynamic fields** - IDs, timestamps, and other server-generated values
+4. **Nested structs with generated fields should also use IgnoreFields** - Apply recursively
+
+### Why This Matters
+
+If you copy values from the result into the expected struct, you're essentially saying "I expect the result to equal itself" - which always passes and tests nothing meaningful.
+
+```go
+// ❌ WRONG: Copying from result defeats the test
+var actual pim.Product
+json.Unmarshal(rec.Body.Bytes(), &actual)
+
+expected := pim.Product{
+    Id:          actual.Id,          // ❌ Copied from result - always matches
+    Sku:         actual.Sku,         // ❌ Copied from result - always matches
+    Variants:    actual.Variants,    // ❌ Copied from result - always matches
+    CreatedAt:   actual.CreatedAt,   // ❌ Copied from result - always matches
+}
+// This test ALWAYS passes even if the API is completely broken!
+
+// ✅ CORRECT: Expected from input, ignore generated fields
+var actual pim.Product
+json.Unmarshal(rec.Body.Bytes(), &actual)
+
+expected := pim.Product{
+    Sku:    createInput.Sku,     // ✅ From input - verifies API saved correctly
+    Name:   createInput.Name,    // ✅ From input - verifies API saved correctly
+    Slug:   createInput.Slug,    // ✅ From input - verifies API saved correctly
+    Status: createInput.Status,  // ✅ From input - verifies API saved correctly
+    Tags:   createInput.Tags,    // ✅ From input - verifies API saved correctly
+    Pricing: pim.ProductPricing{
+        Price:    createInput.Pricing.Price,    // ✅ From input
+        Currency: createInput.Pricing.Currency, // ✅ From input
+    },
+    // Don't include generated fields - use IgnoreFields instead
+}
+
+// Ignore generated/dynamic fields
+opts := cmp.Options{
+    cmpopts.IgnoreFields(pim.Product{}, "Id", "CreatedAt", "UpdatedAt"),
+    cmpopts.IgnoreFields(pim.ProductVariant{}, "Id"),
+    cmpopts.EquateEmpty(),
+}
+
+if diff := cmp.Diff(expected, actual, opts...); diff != "" {
+    t.Errorf("Product mismatch (-want +got):\n%s", diff)
+}
+```
+
+### Fields That Should Be Ignored (Not Copied)
+
+| Field Type | Examples | Why Ignore |
+|------------|----------|------------|
+| Generated IDs | `Id`, `ProductId`, `VariantId` | Server generates UUIDs |
+| Timestamps | `CreatedAt`, `UpdatedAt`, `DeletedAt` | Server generates timestamps |
+| Computed fields | `TotalCount`, `SyncedCount` | Server computes these |
+| Nested struct IDs | `Variants[].Id`, `Media[].Id` | Nested entities also get generated IDs |
+
+### How to Handle Nested Structs with Generated Fields
+
+```go
+// For nested structs like Variants, build expected from input and ignore nested IDs
+expected := pim.Product{
+    Sku:  createInput.Sku,
+    Name: createInput.Name,
+    Variants: []pim.ProductVariant{
+        {
+            Sku:      createInput.Variants[0].Sku,      // ✅ From input
+            Name:     createInput.Variants[0].Name,     // ✅ From input
+            Price:    createInput.Variants[0].Price,    // ✅ From input
+            IsActive: createInput.Variants[0].IsActive, // ✅ From input
+            // Id is ignored via cmpopts.IgnoreFields
+        },
+        {
+            Sku:      createInput.Variants[1].Sku,
+            Name:     createInput.Variants[1].Name,
+            Price:    createInput.Variants[1].Price,
+            IsActive: createInput.Variants[1].IsActive,
+        },
+    },
+}
+
+opts := cmp.Options{
+    cmpopts.IgnoreFields(pim.Product{}, "Id", "CreatedAt", "UpdatedAt"),
+    cmpopts.IgnoreFields(pim.ProductVariant{}, "Id"),
+    cmpopts.EquateEmpty(),
+}
+```
+
 ## Execution Steps
 
 ### 1. Design API Contract
@@ -440,7 +675,13 @@ if diff := cmp.Diff(expected, actual, protocmp.Transform()); diff != "" {
 - MUST use real PostgreSQL via testcontainers (NO mocking)
 - MUST test through root mux ServeHTTP (NOT individual handlers)
 - MUST use table-driven tests with descriptive names
-- MUST use generated structs and `cmp.Diff()` for comparison
+- MUST use `cmp.Diff()` for ALL struct comparisons (NEVER individual field assertions)
+- MUST fill ALL struct fields completely (no empty arrays, no nil nested structs)
+- MUST have at least 2 elements in every array/slice field
+- MUST populate every nested struct recursively to primitive values
+- MUST use realistic production-like values (not "test", "foo", "bar")
+- **MUST NEVER copy values from execution results into expected structs** - use `cmpopts.IgnoreFields()` for generated fields (IDs, timestamps)
+- MUST build expected structs entirely from input data
 - MUST verify tests FAIL before implementation
 - MUST run tests after EVERY code change
 
