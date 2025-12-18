@@ -20,8 +20,8 @@
 - "OpenAPI Contract Workflow (OpenAPI → Protobuf Types)" (merged into new workflow sections)
 
 **Templates Requiring Updates**:
-- ✅ plan-template.md - References Principle V, needs update for dual approach
-- ✅ spec-template.md - References Principle V, needs update for dual approach  
+- ✅ plan-template.md - References Principle SCHEMA_FIRST, needs update for dual approach
+- ✅ spec-template.md - References Principle SCHEMA_FIRST, needs update for dual approach  
 - ✅ tasks-template.md - References OpenAPI → Protobuf workflow, needs update
 
 **Follow-up TODOs**:
@@ -37,13 +37,13 @@ This constitution defines the core principles and governance for Go microservice
 
 ## Testing Principles
 
-### I. Integration Testing (No Mocking)
+### INTEGRATION_TESTING. Integration Testing (No Mocking)
 
 - Tests MUST use real PostgreSQL database connections (NO mocking)
 - Test database MUST be isolated per test run with table truncation
 - Fixtures MUST be inserted via GORM and represent realistic production data
 - Implementation code MUST NEVER contain mocks or mock interfaces
-- Dependencies requiring testability MUST be injected via interfaces using builder pattern (Principle X)
+- Dependencies requiring testability MUST be injected via interfaces using builder pattern (Principle SERVICE_ARCHITECTURE)
 - Test code MUST NOT call `internal/` packages for setup - dependencies MUST be injected via service constructors
 - **Exception (models-only fixtures)**: `testutil/` and fixture helpers MAY import `internal/models` strictly for inserting realistic database fixtures via GORM.
   - This exception applies ONLY to `internal/models` (NOT `internal/config`, NOT `internal/*` broadly)
@@ -55,14 +55,14 @@ This constitution defines the core principles and governance for Go microservice
 
 **Rationale**: Integration tests catch real-world issues mocks cannot (constraints, transactions, serialization). Real fixtures validate actual database behavior. Mocks in implementation code create fake abstraction layers that hide real behavior and complicate the codebase. Dependency injection provides testability without polluting production code with test doubles. Test code calling internal packages creates tight coupling and breaks encapsulation - all setup dependencies should flow through public service constructors using the builder pattern. When mocking is truly necessary (external services), it should be explicit, isolated to `*_test.go` files, and justified to prevent overuse.
 
-### II. Table-Driven Design
+### TABLE_DRIVEN. Table-Driven Design
 
 - Test cases MUST be defined as slices of structs with descriptive `name` fields
 - Execute using `t.Run(testCase.name, func(t *testing.T) {...})`
 
 **Rationale**: Table-driven design reduces duplication and improves maintainability.
 
-### III. Comprehensive Edge Case Coverage
+### EDGE_CASE_COVERAGE. Comprehensive Edge Case Coverage
 
 Every endpoint MUST test:
 - **Input validation**: Empty/nil values, invalid formats, SQL injection, XSS
@@ -74,7 +74,7 @@ Every endpoint MUST test:
 
 **Rationale**: Edge case coverage prevents vulnerabilities and panics.
 
-### IV. ServeHTTP Endpoint Testing
+### SERVEHTTP_TESTING. ServeHTTP Endpoint Testing
 
 API endpoints MUST be tested via ServeHTTP interface:
 - Tests MUST call **root mux ServeHTTP** (NOT individual handler methods) using `httptest.ResponseRecorder`
@@ -88,7 +88,7 @@ API endpoints MUST be tested via ServeHTTP interface:
 **Why Root Mux (Not Individual Handlers)**:
 Calling `handler.Create(rec, req)` bypasses routing, middleware, and method matching. Tests pass even with broken route registration (e.g., typo in path). Calling `mux.ServeHTTP(rec, req)` tests the complete stack and catches routing bugs before production.
 
-### V. API Data Structures (Schema-First Design)
+### SCHEMA_FIRST. API Data Structures (Schema-First Design)
 
 All public API data structures MUST use typed structs generated from API specifications. This project supports **two approaches**:
 
@@ -201,7 +201,7 @@ if diff := cmp.Diff(expected, &response, protocmp.Transform()); diff != "" {
 
 **AI Agent Requirement**: Read `testutil/fixtures.go` to find `CreateTestXxx()` defaults before writing assertions. Document fixture sources in comments.
 
-### VI. Continuous Test Verification
+### CONTINUOUS_TESTING. Continuous Test Verification
 
 Tests MUST be executed after every code change:
 - Tests MUST pass before any commit (run locally with testcontainers)
@@ -215,7 +215,7 @@ Tests MUST be executed after every code change:
 - Run with race detector (`go test -v -race ./...`) for concurrency safety
 - Treat test failures as blocking issues requiring immediate resolution
 
-### VII. Root Cause Tracing (Debugging Discipline)
+### ROOT_CAUSE. Root Cause Tracing (Debugging Discipline)
 
 When problems occur during development, root cause analysis MUST be performed before implementing fixes:
 - Problems MUST be traced backward through the call chain to find the original trigger
@@ -244,12 +244,12 @@ When problems occur during development, root cause analysis MUST be performed be
 - AI agents MUST document the root cause analysis process
 - AI agents MUST update tests to prevent regression of root causes
 
-### VIII. Acceptance Scenario Coverage (Spec-to-Test Mapping)
+### ACCEPTANCE_COVERAGE. Acceptance Scenario Coverage (Spec-to-Test Mapping)
 
 Every user scenario in specifications MUST have corresponding automated tests:
 - Each acceptance scenario (US#-AS#) in spec.md MUST have a test case
 - Test case names MUST reference source scenarios (e.g., "US1-AS1: New customer enrolls")
-- Test functions MUST use table-driven design with test case structs (Principle II)
+- Test functions MUST use table-driven design with test case structs (Principle TABLE_DRIVEN)
 - Each test case struct MUST include `name` field with scenario ID
 - Tests MUST validate complete "Then" clause, not partial behavior
 - No untested scenarios MUST exist (or be explicitly deferred with justification)
@@ -290,13 +290,13 @@ func TestUserAcceptanceScenarios(t *testing.T) {
 - [ ] Test validates complete "Then" clause, not partial behavior
 - [ ] Traceability matrix is up to date (optional but recommended)
 
-### IX. Test Coverage & Gap Analysis
+### COVERAGE_ANALYSIS. Test Coverage & Gap Analysis
 
 **AI Agent Workflow to Recover Untested Code Paths**:
 
 1. **Identify gaps**: Run `go test -coverprofile=coverage.out ./...` then `go tool cover -func=coverage.out` to list uncovered functions/lines
 2. **Analyze gaps**: Read files with low coverage to understand untested branches (error paths, edge cases, conditionals)
-3. **Write tests**: Add table-driven test cases covering the identified gaps (following Principles I-VIII)
+3. **Write tests**: Add table-driven test cases covering the identified gaps (following Principles INTEGRATION_TESTING through ACCEPTANCE_COVERAGE)
 4. **Verify**: Re-run coverage to confirm gaps are closed (target >80% for business logic)
 5. **Clean dead code**: If code cannot be reached legitimately, remove it rather than exempting
 
@@ -310,11 +310,11 @@ func TestUserAcceptanceScenarios(t *testing.T) {
 1. **Design**: Define API contract (OpenAPI or Protobuf) → generate Go code
 2. **Write Tests**: Create table-driven integration tests using generated structs (verify they fail)
 3. **Implement**: Write minimal code to make tests pass
-4. **Run Tests**: Execute full suite after implementation (Principle VI)
+4. **Run Tests**: Execute full suite after implementation (Principle CONTINUOUS_TESTING)
 5. **Refactor**: Improve code while keeping tests green, run tests after each change
 6. **Complete**: Task done only when all tests pass
 
-**Critical**: NO implementation before tests. Run tests after EVERY code change (Principle VI).
+**Critical**: NO implementation before tests. Run tests after EVERY code change (Principle CONTINUOUS_TESTING).
 
 ### Bug Fix Flow (Reproduction-First Debugging)
 
@@ -323,18 +323,18 @@ When a bug is reported (e.g., via curl request/response, error logs, or user rep
 **Phase 1: Capture & Analyze**
 1. **Capture the failing request**: Save the exact curl command, request body, headers, and error response
 2. **Identify the endpoint**: Extract HTTP method, path, and path parameters
-3. **Extract test data**: Parse the JSON request body to create protobuf test fixtures (Principle V)
+3. **Extract test data**: Parse the JSON request body to create protobuf test fixtures (Principle SCHEMA_FIRST)
 4. **Document expected vs actual**: Note what the response should be vs what was returned
 
 **Phase 2: Reproduce with Integration Test**
-1. **Write a failing test FIRST** (Principle I: Integration Testing - NO mocking)
-2. **Test through root mux ServeHTTP** (Principle IV) - NOT individual handler methods
-3. **Use table-driven design** (Principle II) with descriptive name including bug reference (e.g., `"BUG-123: PUT workflow returns INVALID_REQUEST for valid branch step"`)
-4. **Use protobuf structs** (Principle V) for request/response - NO `map[string]interface{}`
+1. **Write a failing test FIRST** (Principle INTEGRATION_TESTING: Integration Testing - NO mocking)
+2. **Test through root mux ServeHTTP** (Principle SERVEHTTP_TESTING) - NOT individual handler methods
+3. **Use table-driven design** (Principle TABLE_DRIVEN) with descriptive name including bug reference (e.g., `"BUG-123: PUT workflow returns INVALID_REQUEST for valid branch step"`)
+4. **Use protobuf structs** (Principle SCHEMA_FIRST) for request/response - NO `map[string]interface{}`
 5. **Setup realistic fixtures** via GORM representing the bug's preconditions
 6. **Verify the test fails** with the same error as the reported bug
 
-**Phase 3: Root Cause Analysis** (Principle VII)
+**Phase 3: Root Cause Analysis** (Principle ROOT_CAUSE)
 1. **Trace backward**: Follow the call chain from error response to origin
 2. **Distinguish symptoms from causes**: The error message is a symptom, find the root cause
 3. **Use debugger/logging**: Add temporary logging to understand control flow
@@ -342,9 +342,9 @@ When a bug is reported (e.g., via curl request/response, error logs, or user rep
 5. **Document findings**: Record the root cause before implementing fix
 
 **Phase 4: Fix & Verify**
-1. **Fix at the source**: Address root cause, NOT symptoms (Principle VII)
+1. **Fix at the source**: Address root cause, NOT symptoms (Principle ROOT_CAUSE)
 2. **Run the reproduction test**: Verify it now passes
-3. **Run full test suite**: Ensure no regressions (`go test -v -race ./...`) (Principle VI)
+3. **Run full test suite**: Ensure no regressions (`go test -v -race ./...`) (Principle CONTINUOUS_TESTING)
 4. **Update documentation**: If the bug revealed unclear API behavior, update docs
 
 
@@ -357,8 +357,8 @@ When a bug is reported (e.g., via curl request/response, error logs, or user rep
 - AI agents MUST write a failing reproduction test BEFORE attempting any fix
 - AI agents MUST NOT skip the reproduction step even for "obvious" bugs
 - AI agents MUST verify the test fails with the reported error before proceeding
-- AI agents MUST apply Root Cause Tracing (Principle VII) - no superficial fixes
-- AI agents MUST run full test suite after fix to catch regressions (Principle VI)
+- AI agents MUST apply Root Cause Tracing (Principle ROOT_CAUSE) - no superficial fixes
+- AI agents MUST run full test suite after fix to catch regressions (Principle CONTINUOUS_TESTING)
 
 ### OpenAPI with oapi-codegen Workflow (Recommended for REST APIs)
 
@@ -642,7 +642,7 @@ func TestProductCreate(t *testing.T) {
 
 ## System Architecture
 
-### X. Service Layer Architecture (Dependency Injection)
+### SERVICE_ARCHITECTURE. Service Layer Architecture (Dependency Injection)
 
 **Core Requirements**:
 - Business logic MUST be Go interfaces (service layer)
@@ -795,23 +795,23 @@ func (b *productServiceBuilder) Build() ProductService {
 
 // Service method
 func (s *productService) Create(ctx context.Context, req *pb.CreateProductRequest) (*pb.Product, error) {
-    // Principle XIII: Validate and return sentinel errors
+    // Principle ERROR_HANDLING: Validate and return sentinel errors
     if req.Name == "" {
         return nil, fmt.Errorf("product name: %w", ErrMissingRequired)
     }
     
     product := &Product{Name: req.Name, SKU: req.Sku}
     
-    // Principle XII: Use context-aware database operations
+    // Principle CONTEXT_AWARE: Use context-aware database operations
     if err := s.db.WithContext(ctx).Create(product).Error; err != nil {
-        // Principle XIII: Wrap errors with context
+        // Principle ERROR_HANDLING: Wrap errors with context
         if isDuplicateKeyError(err) {
             return nil, fmt.Errorf("create product SKU %s: %w", req.Sku, ErrDuplicateSKU)
         }
         return nil, fmt.Errorf("create product: %w", err)
     }
     
-    // Principle V: Return protobuf type
+    // Principle SCHEMA_FIRST: Return protobuf type
     return &pb.Product{Id: product.ID, Name: product.Name, Sku: product.SKU}, nil
 }
 ```
@@ -864,13 +864,13 @@ func DecodeProtoJSON(r *http.Request, msg proto.Message) error {
 func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
     var req pb.CreateProductRequest
     if err := DecodeProtoJSON(r, &req); err != nil {
-        RespondWithError(w, Errors.InvalidRequest, err)  // Principle XIII: Pass error for details
+        RespondWithError(w, Errors.InvalidRequest, err)  // Principle ERROR_HANDLING: Pass error for details
         return
     }
     
     product, err := h.service.Create(r.Context(), &req)
     if err != nil {
-        HandleServiceError(w, err)  // Principle XIII: Automatic error mapping with details
+        HandleServiceError(w, err)  // Principle ERROR_HANDLING: Automatic error mapping with details
         return
     }
     
@@ -884,11 +884,11 @@ func (h *ProductHandler) Get(w http.ResponseWriter, r *http.Request) {
     ctx := r.Context()
     id := r.PathValue("id")  // Extract path parameter (Go 1.22+)
     
-    // Principle X: Service methods MUST use protobuf structs (NOT primitives)
-    // Principle X: Service validates req.Id (handler does NOT check if empty)
+    // Principle SERVICE_ARCHITECTURE: Service methods MUST use protobuf structs (NOT primitives)
+    // Principle SERVICE_ARCHITECTURE: Service validates req.Id (handler does NOT check if empty)
     product, err := h.service.Get(ctx, &pb.GetProductRequest{Id: id})
     if err != nil {
-        HandleServiceError(w, err)  // Principle XIII: Use error mapping
+        HandleServiceError(w, err)  // Principle ERROR_HANDLING: Use error mapping
         return
     }
     
@@ -997,7 +997,7 @@ handler := handlers.NewRouter(workflowService, db).
 
 ## Distributed Tracing
 
-### XI. Distributed Tracing (OpenTracing)
+### DISTRIBUTED_TRACING. Distributed Tracing (OpenTracing)
 
 **Requirements**:
 - HTTP endpoints MUST create OpenTracing spans with operation name (e.g., "POST /api/products")
@@ -1028,14 +1028,14 @@ func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
     var req pb.CreateProductRequest
     if err := DecodeProtoJSON(r, &req); err != nil {
         span.SetTag("error", true)
-        RespondWithError(w, Errors.InvalidRequest, err)  // Principle XIII: Pass error for details
+        RespondWithError(w, Errors.InvalidRequest, err)  // Principle ERROR_HANDLING: Pass error for details
         return
     }
     
     product, err := h.service.Create(r.Context(), &req)
     if err != nil {
         span.SetTag("error", true)
-        HandleServiceError(w, err)  // Principle XIII: Automatic mapping with details
+        HandleServiceError(w, err)  // Principle ERROR_HANDLING: Automatic mapping with details
         return
     }
     
@@ -1049,7 +1049,7 @@ func (s *productService) Create(ctx context.Context, req *pb.CreateProductReques
     defer span.Finish()
     
     product := &Product{Name: req.Name, SKU: req.Sku}
-    if err := s.db.WithContext(ctx).Create(product).Error; err != nil {  // Principle XII
+    if err := s.db.WithContext(ctx).Create(product).Error; err != nil {  // Principle CONTEXT_AWARE
         span.SetTag("error", true)
         return nil, err
     }
@@ -1061,7 +1061,7 @@ func (s *productService) Create(ctx context.Context, req *pb.CreateProductReques
 
 ## Context-Aware Operations
 
-### XII. Context-Aware Operations
+### CONTEXT_AWARE. Context-Aware Operations
 
 **Requirements**:
 - Service methods MUST accept `context.Context` as first parameter
@@ -1081,25 +1081,25 @@ type ProductService interface {
 }
 
 func (s *productService) Create(ctx context.Context, req *pb.CreateProductRequest) (*pb.Product, error) {
-    // Principle XII: Check cancellation before expensive operations
+    // Principle CONTEXT_AWARE: Check cancellation before expensive operations
     select {
     case <-ctx.Done():
         return nil, ctx.Err()
     default:
     }
     
-    // Principle XIII: Validate and return sentinel errors
+    // Principle ERROR_HANDLING: Validate and return sentinel errors
     if req.Name == "" {
         return nil, fmt.Errorf("product name: %w", ErrMissingRequired)
     }
     
-    // Principle XII: Use context-aware database operations
+    // Principle CONTEXT_AWARE: Use context-aware database operations
     tx := s.db.WithContext(ctx).Begin()
     defer tx.Rollback()
     
     product := &Product{Name: req.Name, SKU: req.Sku}
     if err := tx.Create(product).Error; err != nil {
-        // Principle XIII: Wrap errors with context
+        // Principle ERROR_HANDLING: Wrap errors with context
         return nil, fmt.Errorf("create product: %w", err)
     }
     
@@ -1112,18 +1112,18 @@ func (s *productService) Create(ctx context.Context, req *pb.CreateProductReques
 
 // HTTP Handler - extract context
 func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
-    ctx := r.Context()  // Principle XII: Extract context
+    ctx := r.Context()  // Principle CONTEXT_AWARE: Extract context
     
     var req pb.CreateProductRequest
     if err := DecodeProtoJSON(r, &req); err != nil {
         span.SetTag("error", true)
-        RespondWithError(w, Errors.InvalidRequest, err)  // Principle XIII: Pass error for details
+        RespondWithError(w, Errors.InvalidRequest, err)  // Principle ERROR_HANDLING: Pass error for details
         return
     }
     
     product, err := h.service.Create(ctx, &req)  // Propagate context
     if err != nil {
-        HandleServiceError(w, err)  // Principle XIII: Handles context.Canceled with details
+        HandleServiceError(w, err)  // Principle ERROR_HANDLING: Handles context.Canceled with details
         return
     }
     RespondWithProto(w, http.StatusCreated, product)
@@ -1148,7 +1148,7 @@ func (s *productService) BulkUpdate(ctx context.Context, updates []*pb.ProductUp
 
 ## Error Handling Strategy
 
-### XIII. Comprehensive Error Handling
+### ERROR_HANDLING. Comprehensive Error Handling
 
 **Two-Layer Strategy**:
 - **Service Layer**: Sentinel errors (package-level vars) with `fmt.Errorf("%w")` wrapping
@@ -1238,9 +1238,9 @@ func RespondWithError(w http.ResponseWriter, errCode ErrorCode, err error) {
 
 **Service - Validation and Error Wrapping**:
 ```go
-// ✅ Service validates ALL input (Principle X: handlers MUST NOT validate)
+// ✅ Service validates ALL input (Principle SERVICE_ARCHITECTURE: handlers MUST NOT validate)
 func (s *productService) Get(ctx context.Context, req *pb.GetProductRequest) (*pb.Product, error) {
-    // Principle X: ALL validation in service (handler just extracts path param)
+    // Principle SERVICE_ARCHITECTURE: ALL validation in service (handler just extracts path param)
     if req.Id == "" {
         return nil, fmt.Errorf("product id: %w", ErrMissingRequired)
     }
@@ -1276,7 +1276,7 @@ func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 // Automatically maps service errors to HTTP responses with details
 func HandleServiceError(w http.ResponseWriter, err error) {
-    // Check context errors first (Principle XII)
+    // Check context errors first (Principle CONTEXT_AWARE)
     if errors.Is(err, context.Canceled) {
         RespondWithError(w, Errors.RequestCanceled, err)
         return
@@ -1328,25 +1328,25 @@ func main() {
 **Testing** (ALL errors MUST have test cases):
 ```go
 func TestProductAPI_Create_DuplicateSKU(t *testing.T) {
-    // Principle I: Integration test with real database
+    // Principle INTEGRATION_TESTING: Integration test with real database
     db, cleanup := setupTestDB(t)
     defer cleanup()
     defer truncateTables(db, "products")
     
-    // Principle I: Create real database fixture
+    // Principle INTEGRATION_TESTING: Create real database fixture
     createTestProduct(db, map[string]interface{}{"name": "Existing", "sku": "DUP-001"})
     
-    // Principle X: Use builder pattern
+    // Principle SERVICE_ARCHITECTURE: Use builder pattern
     service := NewProductService(db).Build()
     mux := SetupRoutes(service)
     
-    // Principle V: Use protobuf structs
+    // Principle SCHEMA_FIRST: Use protobuf structs
     reqData := &pb.CreateProductRequest{Name: "New Product", Sku: "DUP-001"}
     body, _ := protojson.Marshal(reqData)  // ✅ Use protojson for protobuf (camelCase)
     req := httptest.NewRequest("POST", "/api/products", bytes.NewReader(body))
     rec := httptest.NewRecorder()
     
-    // Principle IV: Test through root mux ServeHTTP
+    // Principle SERVEHTTP_TESTING: Test through root mux ServeHTTP
     mux.ServeHTTP(rec, req)
     
     // Verify HTTP status
@@ -1413,7 +1413,7 @@ All pull requests MUST be reviewed against these constitutional requirements:
 - Tests MUST be reviewed before implementation code (TDD workflow)
 - Reviewers MUST verify GORM is used for database access (no raw SQL unless justified)
 - ALL tests MUST pass before code review approval (no exceptions)
-- Fixes MUST address root causes, not symptoms (Principle VIII)
+- Fixes MUST address root causes, not symptoms (Principle ROOT_CAUSE)
 
 ## Governance
 

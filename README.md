@@ -4,7 +4,7 @@ A comprehensive template for Go backend API projects with integration testing, p
 
 ## Overview
 
-This repository provides a battle-tested constitution and templates for building production-ready Go backend APIs with:
+This repository provides a battle-tested constitution, templates, and AI workflows for building production-ready Go backend APIs with:
 
 - ✅ **Integration Testing First** - Real database testing, no mocking
 - ✅ **Protobuf Data Structures** - Type-safe API contracts
@@ -14,69 +14,100 @@ This repository provides a battle-tested constitution and templates for building
 - ✅ **Context-Aware Operations** - Proper timeout and cancellation handling
 - ✅ **Table-Driven Tests** - Comprehensive edge case coverage
 - ✅ **Real Database Fixtures** - testcontainers-go for PostgreSQL
+- ✅ **AI Workflows** - Windsurf workflows for TDD, debugging, and code generation
 
 ## Quick Start
 
-### Step 1: Initialize Your Project with Spec-Kit
-
-First, create your new project directory and initialize it with the base spec-kit:
+Run this one-liner in your existing Go project directory:
 
 ```bash
-# Create and initialize your new project
-uvx --from git+https://github.com/github/spec-kit.git specify init my-awesome-api
-
-# Navigate to your project
-cd my-awesome-api
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/theplant/speckit-starter-go/HEAD/install.sh)"
 ```
 
-This creates the base `.specify` folder with the standard spec-kit structure.
+This will:
+- Install `uv` via Homebrew if not available
+- Initialize spec-kit with Windsurf AI support
+- Install the Go constitution, templates, and AI workflows
+- Set up `.specify/` and `.windsurf/workflows/` folders
 
-### Step 2: Overlay the Go Template Constitution
+### What Gets Installed
 
-Now overlay the comprehensive Go constitution and templates from this starter with a single command:
+After running the installer:
 
-```bash
-git clone --depth 1 git@github.com:theplant/speckit-starter-go.git /tmp/speckit-starter-go-$$ && cp -r /tmp/speckit-starter-go-$$/.specify . && rm -rf /tmp/speckit-starter-go-$$
+```
+your-project/
+├── .specify/
+│   ├── memory/
+│   │   └── constitution.md    # Go backend principles
+│   ├── templates/             # Spec, plan, task templates
+│   └── scripts/               # Helper scripts
+└── .windsurf/
+    └── workflows/
+        ├── theplant.tdd.md              # Test-First Development
+        ├── theplant.bugfix.md           # Reproduction-first debugging
+        ├── theplant.service.md          # Service layer architecture
+        ├── theplant.routes.md           # HTTP routing setup
+        ├── theplant.errors.md           # Error handling strategy
+        ├── theplant.coverage.md         # Test coverage analysis
+        ├── theplant.testdb.md           # Test database setup
+        ├── theplant.openapi.md          # OpenAPI code generation
+        ├── theplant.protobuf.md         # Protobuf code generation
+        ├── theplant.tracing.md          # Distributed tracing
+        ├── theplant.system-exploration.md  # Code path tracing
+        └── theplant.root-cause-tracing.md  # Debugging discipline
 ```
 
-This one-liner will:
-- Clone only the latest commit (shallow clone, fast)
-- Copy the `.specify` folder to your project (overwrites existing)
-- Clean up the temporary clone
-- Install the comprehensive Go constitution (version 1.0.0)
-- Install Go-specific templates and scripts
-
-### Step 3: Review and Customize
-
-Review the constitution to understand the principles:
+### Review and Customize
 
 ```bash
 # Read the constitution
 cat .specify/memory/constitution.md
 
-# Review the templates
-ls -la .specify/templates/
+# List available AI workflows
+ls .windsurf/workflows/theplant.*.md
 ```
-
-Customize the constitution and templates for your project's specific needs.
 
 ## What You Get
 
-### Constitution (Version 1.1.0)
+### Constitution Principles
 
-A comprehensive set of principles for backend API development covering:
+A comprehensive set of principles for backend API development:
 
-1. **Integration Testing First** - No mocking database or HTTP layers
-2. **Table-Driven Test Design** - Consistent test structure
-3. **Edge Case Coverage** - Validation, boundaries, errors, security
-4. **Real Database Fixtures** - GORM with testcontainers-go
-5. **ServeHTTP Endpoint Testing** - Full HTTP stack validation
-6. **Protobuf Data Structures** - Type-safe API contracts
-7. **Distributed Tracing** - OpenTracing with appropriate granularity
-8. **Service Layer Architecture** - Reusable services with dependency injection
-9. **Comprehensive Error Handling** - Sentinel errors + HTTP error codes
-10. **Context-Aware Operations** - Proper timeout and cancellation
-11. **Continuous Test Verification** - Run tests after every code change (NEW in v1.1.0)
+| Principle | Description |
+|-----------|-------------|
+| `INTEGRATION_TESTING` | No mocking database or HTTP layers |
+| `TABLE_DRIVEN` | Consistent test structure with table-driven design |
+| `EDGE_CASE_COVERAGE` | Validation, boundaries, errors, security |
+| `REAL_FIXTURES` | GORM with testcontainers-go |
+| `SERVEHTTP_TESTING` | Full HTTP stack validation through root mux |
+| `SCHEMA_FIRST` | Type-safe API contracts with protobuf |
+| `DISTRIBUTED_TRACING` | OpenTracing with appropriate granularity |
+| `SERVICE_ARCHITECTURE` | Reusable services with dependency injection |
+| `ERROR_HANDLING` | Sentinel errors + HTTP error codes |
+| `CONTEXT_AWARE` | Proper timeout and cancellation |
+| `CONTINUOUS_TESTING` | Run tests after every code change |
+| `ROOT_CAUSE` | Trace problems to source, fix root cause |
+| `ACCEPTANCE_COVERAGE` | All errors must have test cases |
+
+### AI Workflows
+
+Use these workflows in Windsurf with `/theplant.<workflow>` commands:
+
+| Workflow | Purpose |
+|----------|--------|
+| `/theplant.tdd` | Test-First Development for new features |
+| `/theplant.bugfix` | Reproduction-first debugging |
+| `/theplant.service` | Create services with builder pattern |
+| `/theplant.routes` | Setup HTTP routing |
+| `/theplant.errors` | Implement error handling strategy |
+| `/theplant.coverage` | Analyze and improve test coverage |
+| `/theplant.testdb` | Setup test database with testcontainers |
+| `/theplant.openapi` | Generate Go code from OpenAPI specs |
+| `/theplant.protobuf` | Generate Go code from protobuf |
+| `/theplant.hybrid-api` | OpenAPI → Protobuf for REST+gRPC |
+| `/theplant.tracing` | Implement distributed tracing |
+| `/theplant.system-exploration` | Trace code paths before writing tests |
+| `/theplant.root-cause-tracing` | Debug with root cause discipline |
 
 ### Templates
 
@@ -85,16 +116,9 @@ A comprehensive set of principles for backend API development covering:
 - `tasks-template.md` - Task breakdown
 - `checklist-template.md` - Development checklist
 
-### Scripts
-
-- `copy-specify-folder.sh` - This overlay script
-- `create-new-feature.sh` - Feature scaffolding
-- `setup-plan.sh` - Plan generation
-- `update-agent-context.sh` - Context management
-
 ## Technology Stack
 
-- **Language**: Go 1.25+ (latest stable recommended)
+- **Language**: Go 1.22+ (for `r.PathValue()` support)
 - **Database**: PostgreSQL 15+ with JSONB support
 - **HTTP Framework**: Standard library `net/http` with `http.ServeMux`
 - **Database Access**: GORM (gorm.io/gorm)
@@ -102,6 +126,7 @@ A comprehensive set of principles for backend API development covering:
 - **Protocol Buffers**: protoc with protoc-gen-go
 - **Testing**: Standard library `testing` with `httptest`
 - **Test Containers**: testcontainers-go with PostgreSQL module
+- **JSON Serialization**: `protojson` for protobuf types
 
 ## Development Workflow
 
@@ -272,23 +297,27 @@ Recommended structure for Go backend API projects (maximum reusability):
 
 ```
 my-awesome-api/
-├── .specify/              # Spec-kit configuration (this template)
+├── .specify/              # Spec-kit configuration
 │   ├── memory/
 │   │   └── constitution.md
 │   ├── scripts/
 │   └── templates/
+├── .windsurf/
+│   └── workflows/         # AI workflows for development
+│       └── theplant.*.md
+├── api/
+│   ├── openapi/           # OpenAPI specifications
+│   ├── proto/             # Protobuf source files
+│   └── gen/               # Generated Go code
 ├── services/              # PUBLIC - reusable business logic
 │   ├── product_service.go
-│   ├── errors.go          # Sentinel errors
-│   └── migrations.go      # AutoMigrate for external apps
-├── handlers/              # PUBLIC - HTTP handlers (optional)
+│   └── errors.go          # Sentinel errors
+├── handlers/              # PUBLIC - HTTP handlers
 │   ├── product_handler.go
-│   └── error_codes.go
-├── api/gen/v1/            # PUBLIC - protobuf generated code
-│   └── product.pb.go
+│   ├── routes.go          # Router builder
+│   └── error_codes.go     # HTTP error mapping
 ├── internal/              # INTERNAL - implementation details
 │   ├── models/            # GORM models (not exposed)
-│   ├── middleware/
 │   └── config/
 └── tests/
     └── integration/
@@ -347,12 +376,4 @@ For issues or questions:
 - Constitution: See `.specify/memory/constitution.md`
 - Spec-kit base: https://github.com/github/spec-kit
 - This template: https://github.com/theplant/speckit-starter-go
-
----
-
-**Version**: 1.1.0 | **Last Updated**: 2025-11-20
-
-**Version History**:
-- **1.1.0** (2025-11-20): Added Principle XI (Continuous Test Verification)
-- **1.0.0** (2025-11-20): Initial release
 
