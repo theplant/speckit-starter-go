@@ -34,6 +34,11 @@ services/              # PUBLIC - implements ogen Handler interface
 ├── errors.go         # Sentinel errors
 └── migrations.go     # AutoMigrate() for external apps
 
+handlers/              # Server setup with error handling
+├── server.go         # NewServer() wrapper with ErrorHandler
+├── error_handler.go  # ogen ErrorHandler implementation
+└── error_codes.go    # Error code definitions
+
 internal/
 ├── models/           # GORM models (internal only)
 └── config/
@@ -152,31 +157,113 @@ func (s *ProductService) GetProduct(ctx context.Context, params api.GetProductPa
 }
 ```
 
-#### 5. Setup Server
-Use the generated server with your service:
+#### 5. Setup Server with ErrorHandler
+
+**CRITICAL**: Server setup should be in `handlers/` package to encapsulate error handling configuration. This prevents service errors from leaking to users.
+
+Create `handlers/server.go`:
 
 ```go
-// cmd/api/main.go
+package handlers
+
+import (
+    "net/http"
+    
+    api "yourapp/api/gen/product"
+)
+
+// NewServer creates an ogen server with proper error handling configured
+func NewServer(h api.Handler) (*api.Server, error) {
+    return api.NewServer(
+        h,
+        api.WithErrorHandler(OgenErrorHandler),
+    )
+}
+```
+
+Create `handlers/error_handler.go` (see `/theplant.errors` for full implementation):
+
+```go
+package handlers
+
+import (
+    "context"
+    "encoding/json"
+    "errors"
+    "net/http"
+    
+    "yourapp/services"
+)
+
+// OgenErrorHandler maps service errors to user-friendly HTTP responses
+func OgenErrorHandler(ctx context.Context, w http.ResponseWriter, r *http.Request, err error) {
+    errCode := mapServiceError(err)
+    
+    w.Header().Set("Content-Type", "application/json")
+    w.WriteHeader(errCode.HTTPStatus)
+    
+    resp := ErrorResponse{
+        Code:    errCode.Code,
+        Message: errCode.Message,
+    }
+    
+    // Include details in development only
+    if !hideErrorDetails && err != nil {
+        resp.Details = err.Error()
+    }
+    
+    json.NewEncoder(w).Encode(resp)
+}
+
+func mapServiceError(err error) ErrorCode {
+    // Check context errors
+    if errors.Is(err, context.Canceled) {
+        return Errors.RequestCancelled
+    }
+    if errors.Is(err, context.DeadlineExceeded) {
+        return Errors.RequestTimeout
+    }
+    
+    // Check service sentinel errors
+    for _, errCode := range AllErrors() {
+        if errCode.ServiceErr != nil && errors.Is(err, errCode.ServiceErr) {
+            return errCode
+        }
+    }
+    
+    return Errors.InternalError
+}
+```
+
+Use in `cmd/api/main.go`:
+
+```go
 package main
 
 import (
     "log"
     "net/http"
+    "os"
     
-    api "yourapp/api/gen/product"
+    "yourapp/handlers"
     "yourapp/services"
 )
 
 func main() {
     db := setupDatabase()
     
+    // Configure error details visibility
+    if os.Getenv("HIDE_ERROR_DETAILS") == "true" {
+        handlers.SetHideErrorDetails(true)
+    }
+    
     // Service implements ogen Handler interface
     service := services.NewProductService(db).
         WithLogger(logger).
         Build()
     
-    // Create ogen server with service as handler
-    server, err := api.NewServer(service)
+    // Create server via handlers package (includes ErrorHandler)
+    server, err := handlers.NewServer(service)
     if err != nil {
         log.Fatal(err)
     }
@@ -206,6 +293,7 @@ go generate ./...
 ### Key Points
 
 - **CRITICAL**: Services implement ogen `Handler` interface (NEVER in handlers package)
+- **CRITICAL**: Server setup with `ErrorHandler` should be in `handlers/` package
 - Services are reusable Go packages with OpenAPI-defined interfaces
 - ogen handles HTTP routing, request parsing, response serialization
 - Services contain business logic, validation, and database operations
@@ -213,6 +301,7 @@ go generate ./...
 - Tests MUST use generated structs (NO `map[string]interface{}`)
 - Tests MUST compare structs using `cmp.Diff()`
 - ogen provides built-in validation based on OpenAPI schema
+- ErrorHandler maps service sentinel errors to user-friendly HTTP responses
 
 ### AI Agent Requirements
 
@@ -220,6 +309,14 @@ go generate ./...
 - MUST install `ogen` if not available: `go install github.com/ogen-go/ogen/cmd/ogen@latest`
 - MUST regenerate code whenever OpenAPI files change
 - MUST implement the generated `Handler` interface in `services/` package (NEVER in handlers/)
+- MUST create `handlers/server.go` with `NewServer()` that configures `ErrorHandler`
 - MUST use builder pattern for service construction
 - MUST use generated request/response types (NO manual struct definitions)
 - Services MUST be in public packages (NOT `internal/`) for reusability
+- ErrorHandler MUST map service sentinel errors to user-friendly responses
+- NEVER expose internal error details in production (use `HIDE_ERROR_DETAILS=true`)
+
+### See Also
+
+- `/theplant.errors` - Error handling with sentinel errors and HTTP mapping
+- `/theplant.integration-test` - Testing ogen services with real database

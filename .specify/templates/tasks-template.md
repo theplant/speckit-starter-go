@@ -19,12 +19,12 @@ description: "Task list template for feature implementation"
 
 ## Go Project Structure
 
-- **OpenAPI**: `api/openapi/` (API contract definitions - YAML preferred)
+- **OpenAPI**: `api/openapi/` (API contract definitions - YAML preferred, ErrorResponse MUST be defined here)
 - **Generated Code**: `api/gen/<domain>/` (ogen generated Go types and server interfaces)
 - **Services**: `services/` (PUBLIC - implements ogen Handler interface)
+- **Handlers**: `handlers/` (PUBLIC - server setup with ErrorHandler, error codes)
 - **Tests**: `tests/` (SEPARATE package for integration tests with testutil helpers)
 - **Models**: `internal/models/` (GORM - internal only)
-- **No handlers/ package** - services implement ogen Handler directly
 
 <!-- 
   ============================================================================
@@ -56,12 +56,13 @@ description: "Task list template for feature implementation"
 
 ## Phase 2: Foundation (⚠️ BLOCKS all user stories)
 
-- [ ] T010 Setup testcontainers-go in `testutil/db.go` (`setupTestDB()`, `truncateTables()`)
-- [ ] T011 [P] Setup error handling in `services/errors.go` and `handlers/error_codes.go`
-- [ ] T012 [P] Create `HandleServiceError()`, `RespondWithError()` in `handlers/helpers.go`
-- [ ] T013 [P] Setup OpenTracing NoopTracer and routing builder in `handlers/routes.go`
-- [ ] T014 [P] Setup middleware in `handlers/middleware.go`
-- [ ] T015 Create `services/migrations.go` with `AutoMigrate()` function
+- [ ] T010 Setup testcontainers-go in `tests/testutil_test.go` (`setupTestDB()`, `truncateTables()`)
+- [ ] T011 [P] Setup sentinel errors in `services/errors.go`
+- [ ] T012 [P] Define ErrorResponse in `api/openapi/<domain>.yaml`, regenerate with ogen
+- [ ] T013 [P] Create `handlers/error_codes.go` with ErrorCode struct and Errors singleton
+- [ ] T014 [P] Create `handlers/error_handler.go` with `OgenErrorHandler()` and `mapServiceError()`
+- [ ] T015 [P] Create `handlers/server.go` with `NewServer()` wrapper using `api.WithErrorHandler()`
+- [ ] T016 Create `services/migrations.go` with `AutoMigrate()` function
 
 ---
 
@@ -174,10 +175,10 @@ description: "Task list template for feature implementation"
 
 **Code Organization**:
 - Services: PUBLIC packages (implement ogen Handler interface, return generated types)
+- Handlers: PUBLIC `handlers/` package (server setup with ErrorHandler, error codes)
 - Models: `internal/models/` (GORM, internal only)
-- OpenAPI: `api/openapi/` (API contract definitions)
+- OpenAPI: `api/openapi/` (API contract definitions, ErrorResponse MUST be defined here)
 - Generated: `api/gen/<domain>/` (ogen generated Go types and server interfaces)
-- **No handlers/ package** - services implement ogen Handler directly
 
 **Testing Requirements** (Constitution Principles I-IX):
 - **I. Integration Testing**: Real PostgreSQL via testcontainers (NO mocking in implementation code). Mocking ONLY in test code (`*_test.go`) for external systems with justification. Test setup uses public APIs and dependency injection (NOT direct `internal/` package imports). Exception: `testutil/` MAY import `internal/models` strictly for fixtures.
@@ -191,9 +192,9 @@ description: "Task list template for feature implementation"
 - **IX. Coverage >80%**: Run `go test -coverprofile=coverage.out ./...`, analyze with `go tool cover -func=coverage.out`
 
 **Architecture Requirements** (Constitution Principles X-XIII):
-- **X. Service Layer Architecture**: **Services implement ogen-generated `Handler` interface in `services/` package (NEVER in handlers/)**. Services are reusable Go packages with OpenAPI-defined interfaces. **ogen provides built-in validation from OpenAPI schema**. Builder pattern: `NewService(db).WithLogger(log).Build()`. Service methods use ogen-generated structs for ALL parameters/return types (NO primitives, NO maps). `cmd/main.go` calls ONLY services (NEVER `internal/`). No separate handlers/ package needed.
+- **X. Service Layer Architecture**: **Services implement ogen-generated `Handler` interface in `services/` package (NEVER in handlers/)**. Services are reusable Go packages with OpenAPI-defined interfaces. **ogen provides built-in validation from OpenAPI schema**. Builder pattern: `NewService(db).WithLogger(log).Build()`. Service methods use ogen-generated structs for ALL parameters/return types (NO primitives, NO maps). `cmd/main.go` uses `handlers.NewServer()` (NOT `api.NewServer()` directly). `handlers/` package provides server setup with ErrorHandler.
 - **XI. Distributed Tracing**: HTTP endpoints create OpenTracing spans with operation name (e.g., "POST /api/products"). Services create child spans. Database: ONE span per transaction (NOT per query). External calls propagate trace context. Errors set `span.SetTag("error", true)`. Dev uses `opentracing.NoopTracer{}`.
 - **XII. Context-Aware Operations**: Service methods accept `context.Context` as first parameter. Handlers use `r.Context()`. Database uses `db.WithContext(ctx)`. External calls use `http.NewRequestWithContext(ctx, ...)`. Long-running ops check cancellation periodically. Tests verify cancellation behavior.
-- **XIII. Error Handling Strategy**: Service Layer defines sentinel errors in `services/errors.go`, wraps with `fmt.Errorf("%w")`. HTTP Layer defines error codes in `handlers/error_codes.go` with `ServiceErr` field. `HandleServiceError()` provides automatic mapping (NO switch statements). **Environment-Aware Details**: ErrorResponse includes `details` field with full error chain by default; hidden when `HIDE_ERROR_DETAILS=true`. `RespondWithError(w, errCode, err)` always passes original error. ALL errors have test cases. Tests use error code definitions (NOT literal strings).
+- **XIII. Error Handling Strategy**: Service Layer defines sentinel errors in `services/errors.go`, wraps with `fmt.Errorf("%w")`. **ErrorResponse MUST be defined in OpenAPI schema** (generated by ogen). `handlers/error_handler.go` implements ogen ErrorHandler, maps service errors via `errors.Is()`. `handlers/server.go` provides `NewServer()` with `api.WithErrorHandler(OgenErrorHandler)`. **Environment-Aware Details**: ErrorResponse includes `details` field with full error chain by default; hidden when `HIDE_ERROR_DETAILS=true`. ALL errors have test cases. Tests use error code definitions (NOT literal strings).
 
 **Avoid**: Implementing before tests, skipping edge cases, removing tests to pass

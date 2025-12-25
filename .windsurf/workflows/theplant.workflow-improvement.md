@@ -50,6 +50,12 @@ Run this command, then follow the runner's instructions. The runner will tell yo
 
 6. **Avoid duplication** - Check existing workflows before adding new content.
 
+7. **CRITICAL: Sync with Constitution** - When updating ANY workflow, you MUST also update:
+   - `.specify/memory/constitution.md` - The project constitution (bump version if needed)
+   - `.specify/templates/plan-template.md` - Implementation plan template
+   - `.specify/templates/tasks-template.md` - Task list template
+   - Keep all documents consistent with the same patterns and principles
+
 #### Issue Identification
 
 **Why:** Systematic issue identification ensures no learnings are lost. Each issue becomes a potential workflow improvement.
@@ -72,13 +78,17 @@ Analyze the current conversation and document:
 **Why:** Categorization ensures learnings go to the right workflow file, avoiding duplication and keeping workflows focused.
 
 | Issue Type | Target Workflow |
-|------------|-----------------|
-| API/Type mismatches, Orval hooks | `theplant.openapi-first.md` |
+|------------|------------------|
+| API/Type mismatches, ogen patterns | `theplant.openapi.md` |
+| Error handling, ErrorHandler | `theplant.errors.md` |
 | Selector strategies, test patterns | `theplant.e2e-testing.md` |
 | Handler patterns, data persistence | `theplant.msw-mock-backend.md` |
 | Investigation strategies, debugging | `theplant.root-cause-tracing.md` |
 | Data flow tracing | `theplant.system-exploration.md` |
 | Test data patterns | `theplant.test-data-seeding.md` |
+| Integration testing, ServeHTTP | `theplant.integration-test.md` |
+| HTTP routes, builder pattern | `theplant.routes.md` |
+| Test database, testcontainers | `theplant.testdb.md` |
 
 ### Step 2: Read Target Workflow Files
 
@@ -99,6 +109,12 @@ Check:
 **Why:** Applying updates immediately captures learnings while context is fresh.
 
 Edit the target workflow files with the generalized learnings.
+
+**CRITICAL: Also update constitution and templates:**
+1. Read `.specify/memory/constitution.md` to find related sections
+2. Update constitution with the same patterns (bump version if significant change)
+3. Update `.specify/templates/plan-template.md` if it affects project structure or testing strategy
+4. Update `.specify/templates/tasks-template.md` if it affects task organization or code structure
 
 If Needed, Create New Workflow
 
