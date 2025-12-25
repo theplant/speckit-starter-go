@@ -1,33 +1,23 @@
 <!--
 ## Sync Impact Report
 
-**Version Change**: 2.0.0 → 2.1.0 (MINOR)
-**Bump Rationale**: Added oapi-codegen as alternative to Protobuf for OpenAPI → Go code generation. This is a MINOR change as it adds new capability without removing existing Protobuf support.
+**Version Change**: 3.0.0 → 3.1.0 (MINOR)
+**Bump Rationale**: Services now implement ogen Handler interface directly (not handlers package). This allows services to be reusable Go packages with OpenAPI-defined interfaces.
 
 **Modified Principles**:
-- V. "Protobuf Data Structures (Generated from OpenAPI)" → "API Data Structures (Schema-First Design)" - Now supports both OpenAPI/oapi-codegen and Protobuf approaches
+- "API Data Structures (Schema-First Design)" - Services implement ogen Handler interface
+- "Service Layer Architecture" - Services implement ogen Handler, no separate handlers package
 
-**Added Sections**:
-- Option A: OpenAPI with oapi-codegen (Recommended for REST APIs)
-- Option B: Protobuf (Recommended for gRPC or Cross-Language APIs)
-- Hybrid Approach: OpenAPI → Protobuf (Optional)
-- OpenAPI with oapi-codegen Workflow
-- Protobuf Workflow
-- Hybrid Workflow: OpenAPI → Protobuf
-
-**Removed Sections**:
-- "OpenAPI → Protobuf Workflow" (replaced with three separate workflow sections)
-- "OpenAPI Contract Workflow (OpenAPI → Protobuf Types)" (merged into new workflow sections)
+**Key Changes**:
+- Services implement ogen `Handler` interface directly in `services/` package
+- No separate `handlers/` package for HTTP logic - ogen handles routing/serialization
+- Services are reusable Go packages with OpenAPI-defined interfaces
+- External apps can import services and use them directly
 
 **Templates Requiring Updates**:
-- ✅ plan-template.md - References Principle SCHEMA_FIRST, needs update for dual approach
-- ✅ spec-template.md - References Principle SCHEMA_FIRST, needs update for dual approach  
-- ✅ tasks-template.md - References OpenAPI → Protobuf workflow, needs update
-
-**Follow-up TODOs**:
-- Update plan-template.md to reference both OpenAPI and Protobuf approaches
-- Update spec-template.md to reference both approaches
-- Update tasks-template.md to reference both approaches
+- ✅ plan-template.md - Updated for services implementing Handler
+- ✅ spec-template.md - Updated for services implementing Handler
+- ✅ tasks-template.md - Updated for services implementing Handler
 -->
 
 # Go Project Constitution
@@ -54,6 +44,8 @@ This constitution defines the core principles and governance for Go microservice
 - Any use of mocks in tests MUST include written justification explaining why integration testing is infeasible
 
 **Rationale**: Integration tests catch real-world issues mocks cannot (constraints, transactions, serialization). Real fixtures validate actual database behavior. Mocks in implementation code create fake abstraction layers that hide real behavior and complicate the codebase. Dependency injection provides testability without polluting production code with test doubles. Test code calling internal packages creates tight coupling and breaks encapsulation - all setup dependencies should flow through public service constructors using the builder pattern. When mocking is truly necessary (external services), it should be explicit, isolated to `*_test.go` files, and justified to prevent overuse.
+
+**Test Package Organization**: Integration tests SHOULD be in a separate `tests/` package (NOT `services/*_test.go`). This keeps service packages clean and allows tests to import from multiple packages without circular dependencies. Test helpers (`setupTestDB`, `truncateTables`, fixture creators) go in `tests/testutil_test.go`.
 
 ### TABLE_DRIVEN. Table-Driven Design
 
@@ -90,75 +82,44 @@ Calling `handler.Create(rec, req)` bypasses routing, middleware, and method matc
 
 ### SCHEMA_FIRST. API Data Structures (Schema-First Design)
 
-All public API data structures MUST use typed structs generated from API specifications. This project supports **two approaches**:
+All public API data structures MUST use typed structs generated from OpenAPI specifications using **ogen** (github.com/ogen-go/ogen).
 
-#### Option A: OpenAPI with oapi-codegen (Recommended for REST APIs)
+#### OpenAPI with ogen
 
 Generate Go types and server interfaces directly from OpenAPI specifications:
 - API contracts MUST be defined in OpenAPI specifications (single source of truth)
-- Go code MUST be generated using `oapi-codegen` (github.com/oapi-codegen/oapi-codegen)
-- Generated types provide native Go structs with JSON tags
-- Use "strict server" mode for type-safe request/response handling
-- **CRITICAL**: Services MUST NOT define their own interfaces. Instead, implement the generated `StrictServerInterface` directly
-- Business logic handlers implement `StrictServerInterface` - this IS the service layer for OpenAPI projects
+- Go code MUST be generated using `ogen` (github.com/ogen-go/ogen/cmd/ogen)
+- Generated types provide native Go structs with JSON tags and built-in validation
+- **CRITICAL**: Services MUST implement the generated `Handler` interface in `services/` package (NEVER in handlers/)
+- Services are reusable Go packages with OpenAPI-defined interfaces
 - Tests MUST use generated structs (NO `map[string]interface{}`)
 - **CRITICAL**: Tests MUST compare structs using `cmp.Diff()` (NO `==`, `reflect.DeepEqual`, or individual field checks)
 
-**oapi-codegen Workflow**:
+**ogen Workflow**:
 1. Define API contract in `api/openapi/<domain>.yaml` or `api/openapi/<domain>.json`
-2. Generate Go code: `oapi-codegen --config=oapi-codegen.yaml api/openapi/<domain>.yaml`
-3. Implement the generated `StrictServerInterface` directly (NO separate service interface)
-4. Use generated types in handlers and tests
-
-**oapi-codegen Configuration** (`oapi-codegen.yaml`):
-```yaml
-package: api
-generate:
-  strict-server: true
-  models: true
-  embedded-spec: true
-output: api/gen/<domain>/api.gen.go
-```
+2. Generate Go code: `go run github.com/ogen-go/ogen/cmd/ogen@latest --target api/gen/<domain> --clean api/openapi/<domain>.yaml`
+3. Implement the generated `Handler` interface in `services/` package
+4. Use generated types in services and tests
 
 **go:generate example**:
 ```go
-//go:generate go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen --config=oapi-codegen.yaml ../../openapi/<domain>.yaml
+package <domain>
+
+//go:generate go run github.com/ogen-go/ogen/cmd/ogen@latest --target . --clean ../../openapi/<domain>.yaml
 ```
 
-#### Option B: Protobuf (Recommended for gRPC or Cross-Language APIs)
-
-Generate Go types from Protocol Buffer definitions:
-- `.proto` files define the API contract (single source of truth)
-- Protobuf field numbers MUST be stabilized (never reuse deleted field numbers)
-- Tests MUST use protobuf structs (NO `map[string]interface{}`)
-- **CRITICAL**: Tests MUST compare protobuf messages using `cmp.Diff()` with `protocmp.Transform()`
-- Use `protojson` for JSON serialization (camelCase)
-
-**Protobuf Workflow**:
-1. Define messages in `api/proto/<domain>/v1/<domain>.proto`
-2. Generate Go code: `protoc --go_out=. --go_opt=paths=source_relative api/proto/<domain>/v1/<domain>.proto`
-3. Use generated types in services and handlers
-4. Serialize with `protojson.Marshal()` / `protojson.Unmarshal()`
-
-#### Hybrid Approach: OpenAPI → Protobuf (Optional)
-
-For projects needing both REST and gRPC, generate Protobuf from OpenAPI:
-- API contracts MUST be defined in OpenAPI specifications (single source of truth)
-- `.proto` files MUST be generated from OpenAPI via `openapi2proto` and MUST NOT be hand-edited
-- Protobuf field numbers MUST be stabilized via OpenAPI `x-proto-tag`
-
-#### Common Requirements (Both Approaches)
+#### Requirements
 
 - Tests MUST use generated structs (NO `map[string]interface{}`)
-- **CRITICAL**: Tests MUST compare using `cmp.Diff()` (with `protocmp.Transform()` for protobuf)
+- **CRITICAL**: Tests MUST compare using `cmp.Diff()`
 - **AI Agent Requirement**: ALWAYS use `cmp.Diff()` for struct assertions. NEVER use individual field comparisons like `if resp.Field != expected`
 - **Expected values MUST be derived from TEST FIXTURES** (request data, database fixtures, config)
 - **Copy from response ONLY for truly random fields**: UUIDs, timestamps, crypto-rand tokens
 - **Copying non-random response fields defeats testing** (test always passes)
 
-**Rationale**: Schema-first design provides type safety and ensures API contracts are the source of truth. Generated types eliminate manual struct maintenance and reduce bugs. `cmp.Diff()` ensures complete struct validation.
+**Rationale**: Schema-first design provides type safety and ensures API contracts are the source of truth. Generated types eliminate manual struct maintenance and reduce bugs. `cmp.Diff()` ensures complete struct validation. ogen provides built-in validation based on OpenAPI schema.
 
-**Example (OpenAPI with oapi-codegen)**:
+**Example (OpenAPI with ogen)**:
 ```go
 // ✅ CORRECT: Use cmp.Diff for struct comparison
 expected := api.Product{
@@ -174,20 +135,6 @@ if diff := cmp.Diff(expected, response); diff != "" {
 // ❌ WRONG: Individual field comparisons
 if response.Name != "Test Product" {  // NEVER do this!
     t.Errorf("Expected name Test Product, got %s", response.Name)
-}
-```
-
-**Example (Protobuf)**:
-```go
-// ✅ CORRECT: Use cmp.Diff with protocmp.Transform()
-expected := &pb.Product{
-    Id:          response.Id,          // Random UUID (use response)
-    Name:        "Test Product",       // From request fixture
-    CategoryId:  category.ID,          // From database fixture
-    CreatedAt:   response.CreatedAt,   // Timestamp (use response)
-}
-if diff := cmp.Diff(expected, &response, protocmp.Transform()); diff != "" {
-    t.Errorf("Mismatch (-want +got):\n%s", diff)
 }
 ```
 
@@ -307,7 +254,7 @@ func TestUserAcceptanceScenarios(t *testing.T) {
 
 ### Test-First Development (TDD)
 
-1. **Design**: Define API contract (OpenAPI or Protobuf) → generate Go code
+1. **Design**: Define API contract (OpenAPI) → generate Go code with ogen
 2. **Write Tests**: Create table-driven integration tests using generated structs (verify they fail)
 3. **Implement**: Write minimal code to make tests pass
 4. **Run Tests**: Execute full suite after implementation (Principle CONTINUOUS_TESTING)
@@ -323,14 +270,14 @@ When a bug is reported (e.g., via curl request/response, error logs, or user rep
 **Phase 1: Capture & Analyze**
 1. **Capture the failing request**: Save the exact curl command, request body, headers, and error response
 2. **Identify the endpoint**: Extract HTTP method, path, and path parameters
-3. **Extract test data**: Parse the JSON request body to create protobuf test fixtures (Principle SCHEMA_FIRST)
+3. **Extract test data**: Parse the JSON request body to create test fixtures using generated types (Principle SCHEMA_FIRST)
 4. **Document expected vs actual**: Note what the response should be vs what was returned
 
 **Phase 2: Reproduce with Integration Test**
 1. **Write a failing test FIRST** (Principle INTEGRATION_TESTING: Integration Testing - NO mocking)
 2. **Test through root mux ServeHTTP** (Principle SERVEHTTP_TESTING) - NOT individual handler methods
 3. **Use table-driven design** (Principle TABLE_DRIVEN) with descriptive name including bug reference (e.g., `"BUG-123: PUT workflow returns INVALID_REQUEST for valid branch step"`)
-4. **Use protobuf structs** (Principle SCHEMA_FIRST) for request/response - NO `map[string]interface{}`
+4. **Use generated structs** (Principle SCHEMA_FIRST) for request/response - NO `map[string]interface{}`
 5. **Setup realistic fixtures** via GORM representing the bug's preconditions
 6. **Verify the test fails** with the same error as the reported bug
 
@@ -360,123 +307,86 @@ When a bug is reported (e.g., via curl request/response, error logs, or user rep
 - AI agents MUST apply Root Cause Tracing (Principle ROOT_CAUSE) - no superficial fixes
 - AI agents MUST run full test suite after fix to catch regressions (Principle CONTINUOUS_TESTING)
 
-### OpenAPI with oapi-codegen Workflow (Recommended for REST APIs)
+### OpenAPI with ogen Workflow
 
-Generate Go types and server interfaces directly from OpenAPI specifications using `oapi-codegen`.
+Generate Go types and server interfaces directly from OpenAPI specifications using `ogen`. **Services implement the Handler interface directly**, making them reusable Go packages.
 
 **Prerequisites**:
-- `oapi-codegen` MUST be installed: `go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@latest`
+- `ogen` MUST be installed: `go install github.com/ogen-go/ogen/cmd/ogen@latest`
 
 **Workflow**:
 1. **Define Contract**: Create or update OpenAPI files in `api/openapi/<domain>.yaml` (YAML preferred) or `.json`
-2. **Configure oapi-codegen**: Create `oapi-codegen.yaml` configuration file
-3. **Generate Go Code**: Run `go generate` to generate Go types and server interfaces
-4. **Implement Interface**: Implement the generated `StrictServerInterface`
-5. **Use in Code**: Import generated packages, use typed structs throughout
-6. **Update**: Regenerate code whenever OpenAPI spec changes
-
-**oapi-codegen Configuration** (`api/gen/<domain>/oapi-codegen.yaml`):
-```yaml
-package: <domain>
-generate:
-  std-http-server: true    # Go 1.22+ net/http server
-  strict-server: true      # Type-safe request/response handling
-  models: true             # Generate model types
-  embedded-spec: true      # Embed spec for validation
-output: api.gen.go
-```
+2. **Generate Go Code**: Run `go generate` to generate Go types and server interfaces
+3. **Implement Interface**: Implement the generated `Handler` interface in `services/` package (NEVER in handlers/)
+4. **Use in Code**: Import generated packages, use typed structs throughout
+5. **Update**: Regenerate code whenever OpenAPI spec changes
 
 **`go:generate` example**:
 ```go
-//go:generate go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen --config=oapi-codegen.yaml ../../openapi/<domain>.yaml
+package <domain>
+
+//go:generate go run github.com/ogen-go/ogen/cmd/ogen@latest --target . --clean ../../openapi/<domain>.yaml
 ```
 
-**Strict Server Implementation**:
+**Service Implementation** (implements ogen Handler interface):
 ```go
-// Generated interface (do not edit)
-type StrictServerInterface interface {
-    CreateProduct(ctx context.Context, request CreateProductRequestObject) (CreateProductResponseObject, error)
-    GetProduct(ctx context.Context, request GetProductRequestObject) (GetProductResponseObject, error)
+// services/product_service.go
+package services
+
+import (
+    "context"
+    
+    api "yourapp/api/gen/product"
+    "yourapp/internal/models"
+    "gorm.io/gorm"
+)
+
+// ProductService implements api.Handler interface
+type ProductService struct {
+    db     *gorm.DB
+    logger Logger  // Optional
+    cache  Cache   // Optional
 }
 
-// Your implementation
-type ProductServer struct {
-    db *gorm.DB
-}
+// Ensure ProductService implements the generated Handler interface
+var _ api.Handler = (*ProductService)(nil)
 
-func (s *ProductServer) CreateProduct(ctx context.Context, request CreateProductRequestObject) (CreateProductResponseObject, error) {
-    // Business logic here - request.Body contains typed CreateProductRequest
-    product := &models.Product{Name: request.Body.Name}
+func (s *ProductService) CreateProduct(ctx context.Context, req *api.CreateProductReq) (*api.Product, error) {
+    // Business logic here - req contains typed request
+    product := &models.Product{Name: req.Name}
     if err := s.db.WithContext(ctx).Create(product).Error; err != nil {
         return nil, err
     }
-    return CreateProduct201JSONResponse{Id: product.ID, Name: product.Name}, nil
+    return &api.Product{ID: product.ID, Name: product.Name}, nil
 }
+```
+
+**Server Setup**:
+```go
+// cmd/api/main.go
+service := services.NewProductService(db).Build()
+server, err := api.NewServer(service)  // Service implements Handler
+if err != nil {
+    log.Fatal(err)
+}
+http.ListenAndServe(":8080", server)
+```
+
+**Use as Go Package** (external apps can import directly):
+```go
+// In another application
+import "yourapp/services"
+
+svc := services.NewProductService(db).Build()
+product, err := svc.CreateProduct(ctx, &api.CreateProductReq{Name: "Test"})
 ```
 
 **AI Agent Requirements**:
 - AI agents MUST check if OpenAPI spec exists in `api/openapi/` before generating code
-- AI agents MUST install `oapi-codegen` if not available: `go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@latest`
+- AI agents MUST install `ogen` if not available: `go install github.com/ogen-go/ogen/cmd/ogen@latest`
 - AI agents MUST regenerate code whenever OpenAPI files change
-- AI agents MUST implement the generated `StrictServerInterface` for type-safe handlers
+- AI agents MUST implement the generated `Handler` interface in `services/` package (NEVER in handlers/)
 - AI agents MUST use generated request/response types (NO manual struct definitions)
-
-### Protobuf Workflow (Recommended for gRPC or Cross-Language APIs)
-
-Generate Go types from Protocol Buffer definitions.
-
-**Prerequisites**:
-- `protoc` MUST be installed with `protoc-gen-go` plugin
-- For gRPC: `protoc-gen-go-grpc` plugin
-
-**Workflow**:
-1. **Define Contract**: Create or update `.proto` files in `api/proto/<domain>/v1/`
-2. **Generate Go Code**: Run `protoc` to generate Go protobuf structs
-3. **Use in Code**: Import generated packages, use typed structs throughout
-4. **Serialize**: Use `protojson.Marshal()` / `protojson.Unmarshal()` for JSON
-5. **Version**: Never reuse deleted field numbers
-
-**`go:generate` example**:
-```go
-//go:generate protoc --go_out=. --go_opt=paths=source_relative api/proto/<domain>/v1/<domain>.proto
-```
-
-**AI Agent Requirements**:
-- AI agents MUST use `protojson` for JSON serialization (NOT `encoding/json`)
-- AI agents MUST use `protocmp.Transform()` with `cmp.Diff()` for test comparisons
-- AI agents MUST preserve field numbers and MUST NOT reuse deleted field numbers
-
-### Hybrid Workflow: OpenAPI → Protobuf (Optional)
-
-For projects needing both REST and gRPC, generate Protobuf from OpenAPI using `openapi2proto`.
-
-**Prerequisites**:
-- `openapi2proto` MUST be installed: `go install github.com/NYTimes/openapi2proto/cmd/openapi2proto@latest`
-- `protoc` MUST be installed with `protoc-gen-go` plugin
-
-**Workflow**:
-1. **Define Contract**: Create OpenAPI files in `api/openapi/` (single source of truth)
-2. **Generate Proto**: Run `openapi2proto` to generate `.proto` files (NEVER hand-edit)
-3. **Generate Go Code**: Run `protoc` to generate Go protobuf structs
-4. **Use in Code**: Import generated packages, use typed structs throughout
-5. **Version**: Stabilize field numbers via OpenAPI `x-proto-tag`
-
-**Tooling**:
-- Use `openapi2proto` (github.com/NYTimes/openapi2proto) to generate `.proto` from OpenAPI
-- Generate messages only with `-skip-rpcs` unless adopting grpc-gateway
-- Use `x-proto-tag` (in OpenAPI) to stabilize field numbers
-- Use `x-global-options` (in OpenAPI) to set protobuf options such as `go_package`
-
-**`go:generate` example**:
-```go
-//go:generate go run github.com/NYTimes/openapi2proto/cmd/openapi2proto -spec ../../openapi/pim.json -skip-rpcs -out ../proto/pim/v1/pim.proto
-//go:generate protoc --go_out=. --go_opt=paths=source_relative ../proto/pim/v1/pim.proto
-```
-
-**AI Agent Requirements**:
-- AI agents MUST treat OpenAPI as the source of truth (NEVER hand-edit generated `.proto`)
-- AI agents MUST regenerate `.proto` whenever OpenAPI files change
-- AI agents MUST preserve `x-proto-tag` assignments and MUST NOT reuse removed field numbers
 
 ### Test Database Management
 
@@ -499,18 +409,17 @@ Use **database truncation** for test isolation:
 
 ### Architecture Overview for Testing
 
-**Data Flow**: HTTP → Handler → Service (protobuf) → GORM Model → Database
+**Data Flow**: HTTP → Service (implements ogen Handler) → GORM Model → Database
 
 **Layers**:
-- **HTTP**: JSON serialization of protobuf structs using `protojson` (camelCase)
-- **Handler**: Thin wrapper, delegates to service, uses `DecodeProtoJSON`/`RespondWithProto` helpers
-- **Service**: Business logic, accepts/returns protobuf (NEVER internal models)
+- **HTTP**: JSON serialization handled by ogen-generated server
+- **Service**: Implements ogen-generated `Handler` interface with business logic (in `services/` package)
 - **Model**: Internal GORM models (for database only)
 
 **Testing Requirements**:
-- Test via **root mux ServeHTTP** (NOT individual handlers) to test routing/middleware
-- Use protobuf for assertions, internal models for DB verification only
-- Share identical routing configuration (SetupRoutes) between production and tests
+- Test via **ogen server ServeHTTP** to test complete HTTP stack
+- Use generated types for assertions, internal models for DB verification only
+- Services are reusable - can be tested directly or through HTTP
 
 **Complete Testing Example**:
 ```go
@@ -525,8 +434,6 @@ import (
     "testing"
     
     "github.com/google/go-cmp/cmp"
-    "google.golang.org/protobuf/encoding/protojson"
-    "google.golang.org/protobuf/testing/protocmp"
     "gorm.io/driver/postgres"
     "gorm.io/gorm"
     
@@ -534,7 +441,7 @@ import (
     "github.com/testcontainers/testcontainers-go/modules/postgres"
     "github.com/testcontainers/testcontainers-go/wait"
     
-    pb "yourapp/api/gen/pim/v1"  // Protobuf generated types
+    api "yourapp/api/gen/pim"  // ogen generated types
 )
 
 // Setup PostgreSQL test container using testcontainers
@@ -601,35 +508,37 @@ func TestProductCreate(t *testing.T) {
     defer cleanup()
     defer truncateTables(db, "products")
     
-    // ✅ Use builder pattern for services and routes
-    service := NewProductService(db).Build()
-    mux := handlers.NewRouter(service, db).Build()  // ✅ Builder pattern for routes
+    // ✅ Create service and server using ogen
+    // Service implements ogen Handler interface
+    service := services.NewProductService(db).Build()
+    server, _ := api.NewServer(service)
     
-    // ✅ Use protobuf structs for request
-    reqData := &pb.CreateProductRequest{Name: "Test Product", Sku: "TEST-001"}
-    body, _ := protojson.Marshal(reqData)
+    // ✅ Use generated structs for request
+    reqData := api.CreateProductReq{Name: "Test Product", Sku: "TEST-001"}
+    body, _ := json.Marshal(reqData)
     req := httptest.NewRequest("POST", "/api/products", bytes.NewReader(body))
+    req.Header.Set("Content-Type", "application/json")
     rec := httptest.NewRecorder()
     
-    mux.ServeHTTP(rec, req)  // ✅ Test through root mux
+    server.ServeHTTP(rec, req)  // ✅ Test through ogen server
     
     if rec.Code != http.StatusCreated {
         t.Fatalf("Expected %d, got %d", http.StatusCreated, rec.Code)
     }
     
-    var response pb.Product
+    var response api.Product
     respBody, _ := io.ReadAll(rec.Body)
-    protojson.Unmarshal(respBody, &response)
+    json.Unmarshal(respBody, &response)
     
-    // ✅ CORRECT: Build expected from fixtures, use cmp.Diff with protocmp
-    expected := &pb.Product{
+    // ✅ CORRECT: Build expected from fixtures, use cmp.Diff
+    expected := api.Product{
         Id:   response.Id,    // Random UUID (copy from response)
         Name: reqData.Name,   // From request fixture
         Sku:  reqData.Sku,    // From request fixture
     }
     
-    // ✅ ALWAYS use cmp.Diff with protocmp.Transform() for protobuf comparison
-    if diff := cmp.Diff(expected, &response, protocmp.Transform()); diff != "" {
+    // ✅ ALWAYS use cmp.Diff for struct comparison
+    if diff := cmp.Diff(expected, response); diff != "" {
         t.Errorf("Mismatch (-want +got):\n%s", diff)
     }
     
@@ -645,46 +554,53 @@ func TestProductCreate(t *testing.T) {
 ### SERVICE_ARCHITECTURE. Service Layer Architecture (Dependency Injection)
 
 **Core Requirements**:
-- Business logic MUST be Go interfaces (service layer)
+- **CRITICAL**: Services MUST implement ogen-generated `Handler` interface directly in `services/` package
+- Services are reusable Go packages with OpenAPI-defined interfaces
+- No separate `handlers/` package needed - ogen handles HTTP routing/serialization
 - Services MUST NOT depend on HTTP types (only `context.Context` allowed)
-- Handlers MUST be thin wrappers delegating to services
-- **ALL validation MUST be in services** (handlers MUST NOT validate input, including empty/nil checks)
-- Handlers MUST ONLY: decode request body, extract path parameters, call service, write response
-- Services and handlers MUST be in public packages (NOT `internal/`) for reusability
+- **ALL validation MUST be in services** (ogen provides schema validation, services add business validation)
+- Services MUST be in public packages (NOT `internal/`) for reusability
 - External dependencies MUST be injected via builder pattern
 - Services MUST use builder pattern: `NewService(db).WithLogger(log).Build()`
-- `cmd/main.go` MUST ONLY call handlers or services (NEVER `internal/` packages directly)
+- `cmd/main.go` MUST ONLY call services (NEVER `internal/` packages directly)
 - If `cmd/main.go` needs functionality from `internal/`, that code MUST be promoted to a public service
 
-**Architecture**: `HTTP Handler (thin) → Service Interface (business logic) → Database`
+**Architecture**: `HTTP (ogen server) → Service (implements Handler) → GORM Model → Database`
 
-**Rationale**: Separates transport from business logic, enables reuse across HTTP/gRPC/CLI/workers, allows external Go apps to import as library. Services in `internal/` cannot be imported externally (Go visibility rules). Main entry points calling internal packages creates tight coupling and breaks architectural boundaries - all application logic should flow through public services.
+**Rationale**: Services implement ogen Handler interface directly, making them reusable Go packages. External apps can import services and use them directly with OpenAPI-defined interfaces. ogen handles HTTP routing, request parsing, and response serialization. Services in `internal/` cannot be imported externally (Go visibility rules).
 
-### Service Method Parameters: Protobuf Structs Only
+### Service Method Parameters: Generated Structs Only
 
-**CRITICAL**: Service methods MUST use protobuf structs for ALL parameters and return types. NO primitives, NO maps.
+**CRITICAL**: Service methods (Handler interface implementations) MUST use ogen-generated structs for ALL parameters and return types. NO primitives, NO maps.
 
 ```go
-// ✅ CORRECT
-type ProductService interface {
-    Create(ctx context.Context, req *pb.CreateProductRequest) (*pb.Product, error)
-    Get(ctx context.Context, req *pb.GetProductRequest) (*pb.Product, error)
-    List(ctx context.Context, req *pb.ListProductsRequest) (*pb.ListProductsResponse, error)
+// ✅ CORRECT: Service implements ogen-generated Handler interface
+type ProductService struct {
+    db *gorm.DB
 }
 
-// ❌ WRONG
+// Ensure ProductService implements the generated Handler interface
+var _ api.Handler = (*ProductService)(nil)
+
+func (s *ProductService) CreateProduct(ctx context.Context, req *api.CreateProductReq) (*api.Product, error) {
+    // Business logic here
+}
+
+func (s *ProductService) GetProduct(ctx context.Context, params api.GetProductParams) (*api.Product, error) {
+    // Business logic here
+}
+
+// ❌ WRONG: Custom interfaces with primitives
 type ProductService interface {
-    Create(ctx context.Context, name, sku string) (*pb.Product, error)  // NO primitives!
-    Get(ctx context.Context, id string) (*pb.Product, error)            // NO primitives!
-    List(ctx context.Context, limit, offset int) ([]*pb.Product, error) // NO multiple returns!
+    Create(ctx context.Context, name, sku string) (*api.Product, error)  // NO primitives!
+    Get(ctx context.Context, id string) (*api.Product, error)            // NO primitives!
 }
 ```
 
-**Why Protobuf Only**:
-- Built-in validation (no manual checks)
+**Why Generated Structs Only**:
+- Built-in validation from OpenAPI schema
 - Easy to add optional fields (no breaking changes)
-- API documentation (protobuf comments)
-- Cross-language support
+- API documentation from OpenAPI spec
 - Type safety
 
 
@@ -692,25 +608,34 @@ type ProductService interface {
 **Package Structure**:
 
 ```go
-// ✅ CORRECT: Services/handlers in public packages
+// ✅ CORRECT: Services implement ogen Handler in services/ package
 github.com/theplant/myapp/
 ├── api/
 │   ├── openapi/  // PUBLIC - OpenAPI specifications (single source of truth)
-│   │   └── pim.json
-│   ├── proto/pim/v1/  // PUBLIC - protobuf source files (generated from OpenAPI)
-│   │   └── pim.proto
-│   └── gen/pim/v1/    // PUBLIC - generated protobuf (services return these)
-│       └── pim.pb.go
-├── services/          // PUBLIC - reusable by external apps
-│   ├── product_service.go
-│   └── errors.go
-├── handlers/          // PUBLIC - reusable routing/HTTP logic
-│   ├── product_handler.go
-│   ├── error_codes.go
-│   └── middleware.go
-└── internal/          // INTERNAL - implementation only
-    ├── models/        // ✅ OK (services return protobuf, not models)
-    └── config/        // Not exposed
+│   │   └── pim.yaml
+│   └── gen/pim/  // PUBLIC - ogen generated types and server
+│       ├── gen.go           // go:generate directive
+│       ├── oas_handlers_gen.go
+│       ├── oas_server_gen.go
+│       └── oas_schemas_gen.go
+├── services/          // PUBLIC - implements ogen Handler interface
+│   ├── product_service.go   // Implements api.Handler
+│   ├── errors.go            // Sentinel errors
+│   └── migrations.go        // AutoMigrate() for external apps
+├── tests/             // SEPARATE package for integration tests
+│   ├── testutil_test.go     // Test helpers (setupTestDB, fixtures)
+│   └── product_test.go      // Integration tests
+├── internal/          // INTERNAL - implementation only
+│   ├── models/        // ✅ OK (services return generated types, not models)
+│   └── config/        // Not exposed
+└── cmd/
+    └── api/
+        └── main.go
+
+// ❌ WRONG: Handler implementation in handlers/ package
+github.com/theplant/myapp/
+├── handlers/          // ❌ NEVER implement ogen Handler here!
+│   └── product_handler.go
 
 // ❌ WRONG: Services in internal (cannot import)
 github.com/theplant/myapp/
@@ -719,11 +644,11 @@ github.com/theplant/myapp/
 ```
 
 **Why Models Stay Internal**:
-Services return protobuf (public), use GORM models internally only. External apps never see models.
+Services return ogen-generated types (public), use GORM models internally only. External apps never see models.
 
 **When to Use `internal/`**:
-- ✅ Models, middleware, config, database helpers
-- ❌ Services, handlers, protobuf (must be public for reusability)
+- ✅ Models, config, database helpers
+- ❌ Services, generated types (must be public for reusability)
 
 
 **Internal GORM Model**:
@@ -754,17 +679,26 @@ svc := services.NewProductService(db).Build()
 **Service Implementation with Builder Pattern**:
 
 ```go
-// Service interface
-type ProductService interface {
-    Create(ctx context.Context, req *pb.CreateProductRequest) (*pb.Product, error)
-    Get(ctx context.Context, req *pb.GetProductRequest) (*pb.Product, error)
-}
+// services/product_service.go
+package services
 
-type productService struct {
+import (
+    "context"
+    
+    api "yourapp/api/gen/product"
+    "yourapp/internal/models"
+    "gorm.io/gorm"
+)
+
+// ProductService implements api.Handler interface
+type ProductService struct {
     db     *gorm.DB
     logger Logger  // Optional
     cache  Cache   // Optional
 }
+
+// Ensure ProductService implements the generated Handler interface
+var _ api.Handler = (*ProductService)(nil)
 
 // Unexported builder
 type productServiceBuilder struct {
@@ -789,18 +723,16 @@ func (b *productServiceBuilder) WithCache(cache Cache) *productServiceBuilder {
     return b
 }
 
-func (b *productServiceBuilder) Build() ProductService {
-    return &productService{db: b.db, logger: b.logger, cache: b.cache}
+func (b *productServiceBuilder) Build() *ProductService {
+    return &ProductService{db: b.db, logger: b.logger, cache: b.cache}
 }
 
-// Service method
-func (s *productService) Create(ctx context.Context, req *pb.CreateProductRequest) (*pb.Product, error) {
-    // Principle ERROR_HANDLING: Validate and return sentinel errors
-    if req.Name == "" {
-        return nil, fmt.Errorf("product name: %w", ErrMissingRequired)
-    }
+// Service method (implements ogen Handler interface)
+func (s *ProductService) CreateProduct(ctx context.Context, req *api.CreateProductReq) (*api.Product, error) {
+    // Note: ogen provides built-in validation from OpenAPI schema
+    // Additional business validation can be added here
     
-    product := &Product{Name: req.Name, SKU: req.Sku}
+    product := &models.Product{Name: req.Name, SKU: req.Sku}
     
     // Principle CONTEXT_AWARE: Use context-aware database operations
     if err := s.db.WithContext(ctx).Create(product).Error; err != nil {
@@ -811,187 +743,37 @@ func (s *productService) Create(ctx context.Context, req *pb.CreateProductReques
         return nil, fmt.Errorf("create product: %w", err)
     }
     
-    // Principle SCHEMA_FIRST: Return protobuf type
-    return &pb.Product{Id: product.ID, Name: product.Name, Sku: product.SKU}, nil
+    // Principle SCHEMA_FIRST: Return ogen-generated type
+    return &api.Product{Id: product.ID, Name: product.Name, Sku: product.SKU}, nil
 }
 ```
 
 **Usage**:
 ```go
 // Minimal (tests)
-svc := NewProductService(db).Build()
+service := services.NewProductService(db).Build()
 
 // Production (with logging)
-svc := NewProductService(db).WithLogger(log).WithCache(cache).Build()
+service := services.NewProductService(db).WithLogger(log).WithCache(cache).Build()
+
+// Create ogen server with service (service implements Handler)
+server, err := api.NewServer(service)
+if err != nil {
+    log.Fatal(err)
+}
+http.ListenAndServe(":8080", server)
 ```
 
-**Optional: Service Middleware** (for advanced customization):
-Services MAY expose middleware functions for external apps to add custom logic (validation, audit, rate-limiting). Builder pattern extends to support `WithCreateMiddleware(mw)` methods.
-
+**Use as Go Package** (external apps can import directly):
 ```go
-// Usage: External apps add custom middleware
-svc := services.NewProductService(db).
-    WithCreateMiddleware(validateSKU).
-    WithCreateMiddleware(auditLog).
-    Build()
+// In another application
+import "yourapp/services"
+
+svc := services.NewProductService(db).Build()
+product, err := svc.CreateProduct(ctx, &api.CreateProductReq{Name: "Test"})
 ```
 
-
-**HTTP Handler**:
-```go
-// Thin wrapper delegating to service
-type ProductHandler struct {
-    service ProductService
-}
-
-// Helper functions for protojson serialization (handlers/helpers.go)
-func RespondWithProto(w http.ResponseWriter, status int, msg proto.Message) {
-    w.Header().Set("Content-Type", "application/json")
-    w.WriteHeader(status)
-    data, _ := protojson.Marshal(msg)  // ✅ Returns camelCase JSON
-    w.Write(data)
-}
-
-func DecodeProtoJSON(r *http.Request, msg proto.Message) error {
-    body, err := io.ReadAll(r.Body)
-    if err != nil {
-        return err
-    }
-    defer r.Body.Close()
-    return protojson.Unmarshal(body, msg)  // ✅ Accepts camelCase JSON
-}
-
-func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
-    var req pb.CreateProductRequest
-    if err := DecodeProtoJSON(r, &req); err != nil {
-        RespondWithError(w, Errors.InvalidRequest, err)  // Principle ERROR_HANDLING: Pass error for details
-        return
-    }
-    
-    product, err := h.service.Create(r.Context(), &req)
-    if err != nil {
-        HandleServiceError(w, err)  // Principle ERROR_HANDLING: Automatic error mapping with details
-        return
-    }
-    
-    RespondWithProto(w, http.StatusCreated, product)
-}
-
-// Example handler using path parameter extraction
-// ✅ Handler is thin wrapper: extract params, call service, write response
-// ✅ NO validation in handler - service validates req.Id
-func (h *ProductHandler) Get(w http.ResponseWriter, r *http.Request) {
-    ctx := r.Context()
-    id := r.PathValue("id")  // Extract path parameter (Go 1.22+)
-    
-    // Principle SERVICE_ARCHITECTURE: Service methods MUST use protobuf structs (NOT primitives)
-    // Principle SERVICE_ARCHITECTURE: Service validates req.Id (handler does NOT check if empty)
-    product, err := h.service.Get(ctx, &pb.GetProductRequest{Id: id})
-    if err != nil {
-        HandleServiceError(w, err)  // Principle ERROR_HANDLING: Use error mapping
-        return
-    }
-    
-    RespondWithProto(w, http.StatusOK, product)  // ✅ Use protojson (returns camelCase)
-}
-
-```
-
-
-**Routes Setup (Builder Pattern)**:
-
-All dependencies optional. Middlewares must be added explicitly via variadic `WithMiddlewares()`.
-
-```go
-// handlers/routes.go
-type Middleware func(http.Handler) http.Handler
-
-type routerBuilder struct {
-    mux              *http.ServeMux
-    workflowService  services.WorkflowService
-    activityService  services.ActivityService
-    executionService services.ExecutionService
-    triggerService   services.TriggerService
-    db               *gorm.DB
-    middlewares      []Middleware
-}
-
-func NewRouter(workflowService services.WorkflowService, db *gorm.DB) *routerBuilder {
-    return &routerBuilder{workflowService: workflowService, db: db}
-}
-
-func (b *routerBuilder) WithMux(mux *http.ServeMux) *routerBuilder {
-    b.mux = mux
-    return b
-}
-
-func (b *routerBuilder) WithActivityService(svc services.ActivityService) *routerBuilder {
-    b.activityService = svc
-    return b
-}
-
-func (b *routerBuilder) WithExecutionService(svc services.ExecutionService) *routerBuilder {
-    b.executionService = svc
-    return b
-}
-
-func (b *routerBuilder) WithTriggerService(svc services.TriggerService) *routerBuilder {
-    b.triggerService = svc
-    return b
-}
-
-func (b *routerBuilder) WithMiddlewares(mws ...Middleware) *routerBuilder {
-    b.middlewares = append(b.middlewares, mws...)
-    return b
-}
-
-func (b *routerBuilder) Build() http.Handler {
-    mux := b.mux
-    if mux == nil {
-        mux = http.NewServeMux()
-    }
-    
-    // Register routes only for non-nil services
-    if b.workflowService != nil {
-        h := NewWorkflowHandler(b.workflowService)
-        mux.HandleFunc("POST /api/v1/workflows", h.Create)
-        mux.HandleFunc("GET /api/v1/workflows/{id}", h.Get)
-        mux.HandleFunc("GET /api/v1/workflows", h.List)
-        // ... more routes
-    }
-    if b.activityService != nil {
-        h := NewActivityHandler(b.activityService)
-        mux.HandleFunc("GET /api/v1/activities", h.List)
-    }
-    // ... other optional services
-    
-    // Apply middlewares in order
-    var handler http.Handler = mux
-    for _, mw := range b.middlewares {
-        handler = mw(handler)
-    }
-    return handler
-}
-
-func DefaultMiddlewares() []Middleware {
-    return []Middleware{
-        recoveryMiddleware,
-        LoggingMiddleware(),
-        requestIDMiddleware,
-        CORSMiddleware(DefaultCORSConfig()),
-    }
-}
-
-// Usage: Tests (no middlewares needed)
-mux := handlers.NewRouter(workflowService, db).Build()
-
-// Usage: Production (explicit middlewares)
-handler := handlers.NewRouter(workflowService, db).
-    WithActivityService(activityService).
-    WithExecutionService(executionService).
-    WithMiddlewares(handlers.DefaultMiddlewares()...).
-    Build()
-```
+**Note**: With ogen, the generated server handles HTTP routing, request parsing, and response serialization automatically. Services only implement business logic. No separate handlers/ package needed.
 
 
 
@@ -1019,42 +801,18 @@ handler := handlers.NewRouter(workflowService, db).
 
 **Example**:
 ```go
-// HTTP Handler
-func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
-    span := opentracing.StartSpan("POST /api/products")
-    defer span.Finish()
-    span.SetTag("http.method", r.Method)
-    
-    var req pb.CreateProductRequest
-    if err := DecodeProtoJSON(r, &req); err != nil {
-        span.SetTag("error", true)
-        RespondWithError(w, Errors.InvalidRequest, err)  // Principle ERROR_HANDLING: Pass error for details
-        return
-    }
-    
-    product, err := h.service.Create(r.Context(), &req)
-    if err != nil {
-        span.SetTag("error", true)
-        HandleServiceError(w, err)  // Principle ERROR_HANDLING: Automatic mapping with details
-        return
-    }
-    
-    span.SetTag("http.status_code", http.StatusCreated)
-    RespondWithProto(w, http.StatusCreated, product)
-}
-
-// Service - child span
-func (s *productService) Create(ctx context.Context, req *pb.CreateProductRequest) (*pb.Product, error) {
-    span, ctx := opentracing.StartSpanFromContext(ctx, "ProductService.Create")
+// Service method with tracing (implements ogen Handler interface)
+func (s *ProductService) CreateProduct(ctx context.Context, req *api.CreateProductReq) (*api.Product, error) {
+    span, ctx := opentracing.StartSpanFromContext(ctx, "ProductService.CreateProduct")
     defer span.Finish()
     
-    product := &Product{Name: req.Name, SKU: req.Sku}
+    product := &models.Product{Name: req.Name, SKU: req.Sku}
     if err := s.db.WithContext(ctx).Create(product).Error; err != nil {  // Principle CONTEXT_AWARE
         span.SetTag("error", true)
         return nil, err
     }
     
-    return toProto(product), nil
+    return &api.Product{Id: product.ID, Name: product.Name, Sku: product.SKU}, nil
 }
 ```
 
@@ -1075,12 +833,8 @@ func (s *productService) Create(ctx context.Context, req *pb.CreateProductReques
 
 **Example**:
 ```go
-// Service - context as first parameter
-type ProductService interface {
-    Create(ctx context.Context, req *pb.CreateProductRequest) (*pb.Product, error)
-}
-
-func (s *productService) Create(ctx context.Context, req *pb.CreateProductRequest) (*pb.Product, error) {
+// Service method - context as first parameter (ogen Handler interface)
+func (s *ProductService) CreateProduct(ctx context.Context, req *api.CreateProductReq) (*api.Product, error) {
     // Principle CONTEXT_AWARE: Check cancellation before expensive operations
     select {
     case <-ctx.Done():
@@ -1088,16 +842,14 @@ func (s *productService) Create(ctx context.Context, req *pb.CreateProductReques
     default:
     }
     
-    // Principle ERROR_HANDLING: Validate and return sentinel errors
-    if req.Name == "" {
-        return nil, fmt.Errorf("product name: %w", ErrMissingRequired)
-    }
+    // Note: ogen provides built-in validation from OpenAPI schema
+    // Additional business validation can be added here
     
     // Principle CONTEXT_AWARE: Use context-aware database operations
     tx := s.db.WithContext(ctx).Begin()
     defer tx.Rollback()
     
-    product := &Product{Name: req.Name, SKU: req.Sku}
+    product := &models.Product{Name: req.Name, SKU: req.Sku}
     if err := tx.Create(product).Error; err != nil {
         // Principle ERROR_HANDLING: Wrap errors with context
         return nil, fmt.Errorf("create product: %w", err)
@@ -1107,31 +859,12 @@ func (s *productService) Create(ctx context.Context, req *pb.CreateProductReques
         return nil, fmt.Errorf("commit transaction: %w", err)
     }
     
-    return toProto(product), nil
-}
-
-// HTTP Handler - extract context
-func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
-    ctx := r.Context()  // Principle CONTEXT_AWARE: Extract context
-    
-    var req pb.CreateProductRequest
-    if err := DecodeProtoJSON(r, &req); err != nil {
-        span.SetTag("error", true)
-        RespondWithError(w, Errors.InvalidRequest, err)  // Principle ERROR_HANDLING: Pass error for details
-        return
-    }
-    
-    product, err := h.service.Create(ctx, &req)  // Propagate context
-    if err != nil {
-        HandleServiceError(w, err)  // Principle ERROR_HANDLING: Handles context.Canceled with details
-        return
-    }
-    RespondWithProto(w, http.StatusCreated, product)
+    return &api.Product{Id: product.ID, Name: product.Name, Sku: product.SKU}, nil
 }
 
 // Long-running - check cancellation periodically
-func (s *productService) BulkUpdate(ctx context.Context, updates []*pb.ProductUpdate) error {
-    for i, update := range updates {
+func (s *ProductService) BulkUpdate(ctx context.Context, req *api.BulkUpdateReq) error {
+    for i, update := range req.Updates {
         if i%100 == 0 {
             select {
             case <-ctx.Done():
@@ -1141,6 +874,7 @@ func (s *productService) BulkUpdate(ctx context.Context, updates []*pb.ProductUp
         }
         // Process update...
     }
+    return nil
 }
 ```
 
@@ -1168,13 +902,23 @@ var (
 ```
 
 **HTTP Layer**:
-```proto
-// api/proto/common/v1/error.proto - Define error response as protobuf
-message ErrorResponse {
-    string code = 1;     // e.g., "PRODUCT_NOT_FOUND"
-    string message = 2;  // e.g., "Product not found"
-    string details = 3;  // Full error chain (empty in production)
-}
+Define error response in OpenAPI schema:
+```yaml
+# api/openapi/common.yaml
+components:
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        code:
+          type: string
+          description: Error code, e.g., "PRODUCT_NOT_FOUND"
+        message:
+          type: string
+          description: Human-readable message
+        details:
+          type: string
+          description: Full error chain (empty in production)
 ```
 
 ```go
@@ -1221,7 +965,7 @@ func RespondWithError(w http.ResponseWriter, errCode ErrorCode, err error) {
     w.Header().Set("Content-Type", "application/json")
     w.WriteHeader(errCode.HTTPStatus)
     
-    errResp := &pb.ErrorResponse{
+    errResp := api.ErrorResponse{
         Code:    errCode.Code,
         Message: errCode.Message,
     }
@@ -1231,71 +975,29 @@ func RespondWithError(w http.ResponseWriter, errCode ErrorCode, err error) {
         errResp.Details = err.Error()
     }
     
-    data, _ := protojson.Marshal(errResp)
+    data, _ := json.Marshal(errResp)
     w.Write(data)
 }
 ```
 
-**Service - Validation and Error Wrapping**:
+**Handler - Validation and Error Wrapping**:
 ```go
-// ✅ Service validates ALL input (Principle SERVICE_ARCHITECTURE: handlers MUST NOT validate)
-func (s *productService) Get(ctx context.Context, req *pb.GetProductRequest) (*pb.Product, error) {
-    // Principle SERVICE_ARCHITECTURE: ALL validation in service (handler just extracts path param)
-    if req.Id == "" {
-        return nil, fmt.Errorf("product id: %w", ErrMissingRequired)
-    }
-    
+// Handler method with validation (implements ogen Handler interface)
+// Note: ogen provides built-in validation from OpenAPI schema
+// Additional business validation can be added in handler methods
+func (h *ProductHandler) GetProduct(ctx context.Context, params api.GetProductParams) (*api.Product, error) {
     var product Product
-    if err := s.db.WithContext(ctx).First(&product, "id = ?", req.Id).Error; err != nil {
+    if err := h.db.WithContext(ctx).First(&product, "id = ?", params.Id).Error; err != nil {
         if errors.Is(err, gorm.ErrRecordNotFound) {
-            return nil, fmt.Errorf("get product %s: %w", req.Id, ErrProductNotFound)
+            return nil, fmt.Errorf("get product %s: %w", params.Id, ErrProductNotFound)
         }
-        return nil, fmt.Errorf("query product %s: %w", req.Id, err)
+        return nil, fmt.Errorf("query product %s: %w", params.Id, err)
     }
-    return toProto(&product), nil
+    return &api.Product{Id: product.ID, Name: product.Name, Sku: product.SKU}, nil
 }
 ```
 
-**Handler - Automatic Mapping**:
-```go
-func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
-    var req pb.CreateProductRequest
-    if err := DecodeProtoJSON(r, &req); err != nil {  // ✅ Use protojson (accepts camelCase)
-        RespondWithError(w, Errors.InvalidRequest, err)  // Pass error for details
-        return
-    }
-    
-    product, err := h.service.Create(r.Context(), &req)
-    if err != nil {
-        HandleServiceError(w, err)  // Automatic mapping with details!
-        return
-    }
-    
-    RespondWithProto(w, http.StatusCreated, product)  // ✅ Use protojson (returns camelCase)
-}
-
-// Automatically maps service errors to HTTP responses with details
-func HandleServiceError(w http.ResponseWriter, err error) {
-    // Check context errors first (Principle CONTEXT_AWARE)
-    if errors.Is(err, context.Canceled) {
-        RespondWithError(w, Errors.RequestCanceled, err)
-        return
-    }
-    if errors.Is(err, context.DeadlineExceeded) {
-        RespondWithError(w, Errors.RequestTimeout, err)
-        return
-    }
-    
-    // Check service error mapping
-    for _, errCode := range AllErrors() {
-        if errCode.ServiceErr != nil && errors.Is(err, errCode.ServiceErr) {
-            RespondWithError(w, errCode, err)  // Pass original error for details
-            return
-        }
-    }
-    RespondWithError(w, Errors.InternalError, err)
-}
-```
+**Note**: With ogen, HTTP routing and request parsing are handled automatically by the generated server. Your handler methods implement the generated `Handler` interface directly.
 
 **Startup Configuration**:
 ```go
@@ -1336,18 +1038,19 @@ func TestProductAPI_Create_DuplicateSKU(t *testing.T) {
     // Principle INTEGRATION_TESTING: Create real database fixture
     createTestProduct(db, map[string]interface{}{"name": "Existing", "sku": "DUP-001"})
     
-    // Principle SERVICE_ARCHITECTURE: Use builder pattern
-    service := NewProductService(db).Build()
-    mux := SetupRoutes(service)
+    // Create service and ogen server (service implements Handler)
+    service := services.NewProductService(db).Build()
+    server, _ := api.NewServer(service)
     
-    // Principle SCHEMA_FIRST: Use protobuf structs
-    reqData := &pb.CreateProductRequest{Name: "New Product", Sku: "DUP-001"}
-    body, _ := protojson.Marshal(reqData)  // ✅ Use protojson for protobuf (camelCase)
+    // Principle SCHEMA_FIRST: Use generated structs
+    reqData := api.CreateProductReq{Name: "New Product", Sku: "DUP-001"}
+    body, _ := json.Marshal(reqData)
     req := httptest.NewRequest("POST", "/api/products", bytes.NewReader(body))
+    req.Header.Set("Content-Type", "application/json")
     rec := httptest.NewRecorder()
     
-    // Principle SERVEHTTP_TESTING: Test through root mux ServeHTTP
-    mux.ServeHTTP(rec, req)
+    // Principle SERVEHTTP_TESTING: Test through ogen server ServeHTTP
+    server.ServeHTTP(rec, req)
     
     // Verify HTTP status
     if rec.Code != http.StatusConflict {
@@ -1355,18 +1058,18 @@ func TestProductAPI_Create_DuplicateSKU(t *testing.T) {
     }
     
     // Use error code definitions (NOT literal strings)
-    var errResp pb.ErrorResponse
+    var errResp api.ErrorResponse
     respBody, _ := io.ReadAll(rec.Body)
-    protojson.Unmarshal(respBody, &errResp)  // ✅ Use protojson for error response too
+    json.Unmarshal(respBody, &errResp)
     
-    if errResp.Code != Errors.DuplicateSKU.Code {
-        t.Errorf("Expected %s, got %s", Errors.DuplicateSKU.Code, errResp.Code)
+    if errResp.Code != services.Errors.DuplicateSKU.Code {
+        t.Errorf("Expected %s, got %s", services.Errors.DuplicateSKU.Code, errResp.Code)
     }
 }
 ```
 
 **Error Assertions in Tests**:
-- Tests MUST use `ErrorCode` definitions from `handlers/error_codes.go` (NOT literal strings)
+- Tests MUST use `ErrorCode` definitions from `services/errors.go` (NOT literal strings)
 - Tests MUST validate both `Code` and `Message` fields against definitions
 - Example: `if errResp.Code != Errors.WorkflowNotFound.Code` (NOT `"workflow not found"`)
 
@@ -1388,18 +1091,15 @@ func TestProductAPI_Create_DuplicateSKU(t *testing.T) {
 
 ## Technology Stack
 
-- **Language**: Go 1.25+ (recommend latest stable)
+- **Language**: Go 1.22+ (recommend latest stable)
 - **Database**: PostgreSQL 15+ (with JSONB support)
-- **HTTP Framework**: Standard library `net/http` using `http.ServeMux` (Go 1.22+)
+- **HTTP Framework**: ogen-generated server (github.com/ogen-go/ogen)
 - **Database Access**: GORM (gorm.io/gorm with gorm.io/driver/postgres)
 - **Distributed Tracing**: OpenTracing (github.com/opentracing/opentracing-go)
 - **OpenAPI Contract**: OpenAPI v3 (YAML preferred, JSON supported)
-- **OpenAPI → Go Code**: oapi-codegen (github.com/oapi-codegen/oapi-codegen) - generates types, server interfaces, and clients
-- **Protocol Buffers** (optional): protoc compiler, protoc-gen-go, protoc-gen-go-grpc
-- **OpenAPI → Protobuf** (optional): openapi2proto (github.com/NYTimes/openapi2proto) - for hybrid REST/gRPC
-- **Protobuf JSON**: google.golang.org/protobuf/encoding/protojson (for camelCase JSON serialization)
+- **OpenAPI → Go Code**: ogen (github.com/ogen-go/ogen/cmd/ogen) - generates types, server, and client
 - **Testing**: Standard library `testing` package with `httptest`
-- **Test Comparison**: google/go-cmp (with protocmp for protobuf message assertions)
+- **Test Comparison**: google/go-cmp for struct assertions
 - **Test Database**: testcontainers-go with PostgreSQL module (automatic Docker container management)
 - **Migration Tool**: GORM AutoMigrate (for development and testing)
 
@@ -1423,7 +1123,7 @@ All pull requests MUST be reviewed against these constitutional requirements:
 2. Changes MUST be reviewed by project lead or team
 3. Version MUST be incremented per semantic versioning:
    - **MAJOR**: Backward incompatible principle changes (e.g., removing no-mocking rule, allowing map[string]interface{})
-   - **MINOR**: New principles added or major expansions (e.g., adding protobuf requirement, adding tracing requirement, adding comprehensive error handling, adding context-aware operations)
+   - **MINOR**: New principles added or major expansions (e.g., adding ogen requirement, adding tracing requirement, adding comprehensive error handling, adding context-aware operations)
    - **PATCH**: Clarifications, examples, typo fixes
 4. All dependent templates and documentation MUST be updated to reflect changes
 
@@ -1432,10 +1132,10 @@ All pull requests MUST be reviewed against these constitutional requirements:
 - All pull requests MUST comply with these principles
 - Constitution violations MUST be justified in PR description
 - Complexity that violates simplicity principles MUST document "why needed" and "simpler alternatives rejected"
-- When in doubt: integration test over unit test, real database over mock, table-driven over individual tests, protobuf structs over maps, Docker test database over local installation
+- When in doubt: integration test over unit test, real database over mock, table-driven over individual tests, generated structs over maps, Docker test database over local installation
 
 ### Version Control
 
 This constitution is version-controlled alongside code and follows the same review process as code changes.
 
-**Version**: 2.1.0 | **Ratified**: 2025-11-20 | **Last Amended**: 2025-12-15
+**Version**: 3.1.0 | **Ratified**: 2025-11-20 | **Last Amended**: 2025-12-25

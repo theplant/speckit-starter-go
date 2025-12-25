@@ -8,7 +8,7 @@ description: "Task list template for feature implementation"
 **Input**: Design documents from `/specs/[###-feature-name]/`
 **Prerequisites**: plan.md (required), spec.md (required for user stories), research.md, data-model.md, contracts/
 
-**Testing**: TDD mandatory - write tests BEFORE implementation (protobuf → tests → implementation).
+**Testing**: TDD mandatory - write tests BEFORE implementation (OpenAPI → ogen → tests → implementation).
 **Organization**: Tasks grouped by user story for independent implementation.
 
 ## Format: `[ID] [P?] [Story] Description`
@@ -20,12 +20,11 @@ description: "Task list template for feature implementation"
 ## Go Project Structure
 
 - **OpenAPI**: `api/openapi/` (API contract definitions - YAML preferred)
-- **Generated Code**: `api/gen/<domain>/` (generated Go types and server interfaces)
-- **Protobuf** (optional): `api/proto/<domain>/v1/` (for gRPC or cross-language APIs)
-- **Services**: `services/` (PUBLIC - business logic, returns generated types)
-- **Handlers**: `handlers/` (PUBLIC - HTTP layer with `*_test.go`, includes `helpers.go`, `middleware.go`, `routes.go`)
+- **Generated Code**: `api/gen/<domain>/` (ogen generated Go types and server interfaces)
+- **Services**: `services/` (PUBLIC - implements ogen Handler interface)
+- **Tests**: `tests/` (SEPARATE package for integration tests with testutil helpers)
 - **Models**: `internal/models/` (GORM - internal only)
-- **Fixtures**: `testutil/` (helpers and fixtures - MAY import `internal/models` for fixtures)
+- **No handlers/ package** - services implement ogen Handler directly
 
 <!-- 
   ============================================================================
@@ -50,7 +49,7 @@ description: "Task list template for feature implementation"
 
 - [ ] T001 Initialize Go module with Go 1.25+
 - [ ] T002 [P] Setup `api/openapi/`, `api/proto/v1/`, and `api/gen/v1/`
-- [ ] T003 [P] Configure `oapi-codegen` (or `protoc` for Protobuf approach)
+- [ ] T003 [P] Configure `ogen` with go:generate directive
 - [ ] T004 [P] Setup `services/`, `handlers/`, `internal/models/`, `testutil/`, `cmd/api/`
 
 ---
@@ -59,7 +58,7 @@ description: "Task list template for feature implementation"
 
 - [ ] T010 Setup testcontainers-go in `testutil/db.go` (`setupTestDB()`, `truncateTables()`)
 - [ ] T011 [P] Setup error handling in `services/errors.go` and `handlers/error_codes.go`
-- [ ] T012 [P] Create `HandleServiceError()`, `RespondWithError()`, `RespondWithProto()`, `DecodeProtoJSON()` in `handlers/helpers.go`
+- [ ] T012 [P] Create `HandleServiceError()`, `RespondWithError()` in `handlers/helpers.go`
 - [ ] T013 [P] Setup OpenTracing NoopTracer and routing builder in `handlers/routes.go`
 - [ ] T014 [P] Setup middleware in `handlers/middleware.go`
 - [ ] T015 Create `services/migrations.go` with `AutoMigrate()` function
@@ -73,23 +72,22 @@ description: "Task list template for feature implementation"
 
 ### Step 1: API Contract & Code Generation (Design) 📝
 
-- [ ] T030 [P] [US1] Define API contract in `api/openapi/[domain].yaml` (or `.proto` for Protobuf approach)
-- [ ] T031 [US1] Generate Go code via `oapi-codegen` (or `protoc` for Protobuf), commit generated code
+- [ ] T030 [P] [US1] Define API contract in `api/openapi/[domain].yaml`
+- [ ] T031 [US1] Generate Go code via `ogen` (`go generate ./...`), commit generated code
 
 ### Step 2: Tests (Red) 🔴
 
-- [ ] T035 [P] [US1] Create test fixtures in `testutil/fixtures.go`
-- [ ] T036 [US1] Write tests for US1-AS1, US1-AS2 in `handlers/[entity]_handler_test.go`
+- [ ] T035 [P] [US1] Create test fixtures in `tests/testutil_test.go`
+- [ ] T036 [US1] Write tests for US1-AS1, US1-AS2 in `tests/[entity]_test.go`
 - [ ] T037 [US1] Add ALL edge case tests (input validation, boundaries, data state, database, HTTP)
 - [ ] T038 [US1] **RUN TESTS** - Verify FAIL (red) ❌
 
 ### Step 3: Implementation (Green) 🟢
 
 - [ ] T045 [P] [US1] Create model in `internal/models/`, errors in `services/errors.go`, HTTP codes in `handlers/error_codes.go`
-- [ ] T046 [US1] Implement service in `services/[entity]_service.go` (returns protobuf, uses context)
-- [ ] T047 [US1] Implement handler in `handlers/[entity]_handler.go` (thin wrapper)
-- [ ] T048 [US1] Add routes to `handlers/routes.go`, update `services/migrations.go`
-- [ ] T049 [US1] Add OpenTracing spans to handler and service
+- [ ] T046 [US1] Implement service in `services/[entity]_service.go` (implements ogen Handler interface)
+- [ ] T048 [US1] Update `services/migrations.go` with new models
+- [ ] T049 [US1] Add OpenTracing spans to service methods
 - [ ] T050 [US1] **RUN TESTS** - Verify PASS (green) ✅
 
 ### Step 4: Refactor ♻️
@@ -111,7 +109,7 @@ description: "Task list template for feature implementation"
 
 ### TDD Cycle (Same Pattern)
 
-- [ ] T080 [US2] OpenAPI → Protobuf → Generate code (NEVER hand-edit .proto)
+- [ ] T080 [US2] OpenAPI → ogen → Generate code (`go generate ./...`)
 - [ ] T081 [US2] Write tests (US2-AS1, US2-AS2 + edge cases) → Verify FAIL ❌
 - [ ] T082 [US2] Implement (model, errors, service, handler, routes) → RUN TESTS → Verify PASS ✅
 - [ ] T083 [US2] Refactor → Run tests after each change ✅
@@ -124,7 +122,7 @@ description: "Task list template for feature implementation"
 **Goal**: [Brief description]  
 **Acceptance Scenarios**: US3-AS1, US3-AS2
 
-- [ ] T100 [US3] OpenAPI → Protobuf → Tests → Implement → Refactor → Verify (same TDD cycle)
+- [ ] T100 [US3] OpenAPI → ogen → Tests → Implement → Refactor → Verify (same TDD cycle)
 
 ---
 
@@ -150,7 +148,7 @@ description: "Task list template for feature implementation"
 - User stories can proceed in parallel after Foundation
 
 **TDD Cycle** (Constitution Principle VI):
-- OpenAPI → Protobuf (generated) → Tests (red) → Implementation (green) → Refactor → Verify
+- OpenAPI → ogen (generated) → Tests (red) → Implementation (green) → Refactor → Verify
 - Tests BEFORE implementation (mandatory)
 - Run tests after EVERY code change
 - Story complete ONLY when all tests pass
@@ -161,9 +159,9 @@ description: "Task list template for feature implementation"
 
 **MVP First** (Story 1 only): Setup → Foundation → US1 (TDD) → Validate → Deploy
 
-**Incremental**: Each story follows TDD cycle (Protobuf → Red → Green → Refactor → Verify), checkpoint after each
+**Incremental**: Each story follows TDD cycle (ogen → Red → Green → Refactor → Verify), checkpoint after each
 
-**Parallel Team**: Complete Foundation together, then stories in parallel (coordinate on protobuf/fixtures)
+**Parallel Team**: Complete Foundation together, then stories in parallel (coordinate on OpenAPI/fixtures)
 
 ---
 
@@ -175,25 +173,25 @@ description: "Task list template for feature implementation"
 - Story complete ONLY when all tests pass
 
 **Code Organization**:
-- Services/handlers: PUBLIC packages (return generated types)
+- Services: PUBLIC packages (implement ogen Handler interface, return generated types)
 - Models: `internal/models/` (GORM, internal only)
 - OpenAPI: `api/openapi/` (API contract definitions)
-- Generated: `api/gen/<domain>/` (generated Go types and server interfaces)
-- Protobuf (optional): `api/proto/<domain>/v1/` (for gRPC or cross-language APIs)
+- Generated: `api/gen/<domain>/` (ogen generated Go types and server interfaces)
+- **No handlers/ package** - services implement ogen Handler directly
 
 **Testing Requirements** (Constitution Principles I-IX):
 - **I. Integration Testing**: Real PostgreSQL via testcontainers (NO mocking in implementation code). Mocking ONLY in test code (`*_test.go`) for external systems with justification. Test setup uses public APIs and dependency injection (NOT direct `internal/` package imports). Exception: `testutil/` MAY import `internal/models` strictly for fixtures.
 - **II. Table-Driven Design**: Test cases as slices of structs with descriptive `name` fields, execute using `t.Run(testCase.name, func(t *testing.T) {...})`
 - **III. Edge Cases MANDATORY**: Input validation (empty/nil, invalid formats, SQL injection, XSS), boundaries (zero/negative/max), auth (missing/expired/invalid tokens), data state (404s, conflicts), database (constraint violations, foreign key failures), HTTP (wrong methods, missing headers, invalid content-types, malformed JSON)
 - **IV. ServeHTTP Testing**: Call root mux ServeHTTP (NOT individual handlers) using `httptest.ResponseRecorder`, identical routing configuration from shared routes package, `r.PathValue()` for parameters
-- **V. API Data Structures (Schema-First Design)**: Choose ONE approach: (A) OpenAPI with `oapi-codegen` - generate Go types and `StrictServerInterface`, (B) Protobuf - generate via `protoc`, use `protocmp.Transform()`, (C) Hybrid - OpenAPI → Protobuf via `openapi2proto`. Use `cmp.Diff()` for comparisons. Derive expected from TEST FIXTURES. Copy from response ONLY for truly random: UUIDs, timestamps, crypto-rand tokens.
+- **V. API Data Structures (Schema-First Design)**: OpenAPI with `ogen` - generate Go types and `Handler` interface via `go run github.com/ogen-go/ogen/cmd/ogen@latest`. **Services implement `Handler` in `services/` package (NEVER in handlers/)**. Use `cmp.Diff()` for comparisons. Derive expected from TEST FIXTURES. Copy from response ONLY for truly random: UUIDs, timestamps, crypto-rand tokens.
 - **VI. Continuous Test Verification**: Run `go test -v ./...` and `go test -v -race ./...` after EVERY change. Fix failures immediately (NO skipping/disabling tests).
 - **VII. Root Cause Tracing**: Trace backward through call chain, fix source NOT symptoms, NEVER remove/weaken tests
 - **VIII. Acceptance Scenario Coverage**: Every US#-AS# has corresponding test with scenario ID in test case name
 - **IX. Coverage >80%**: Run `go test -coverprofile=coverage.out ./...`, analyze with `go tool cover -func=coverage.out`
 
 **Architecture Requirements** (Constitution Principles X-XIII):
-- **X. Service Layer Architecture**: Business logic in Go interfaces (service layer), services in public packages (NOT `internal/`), handlers thin wrappers. **ALL validation in services** (handlers MUST NOT validate, including empty/nil checks). Builder pattern: `NewService(db).WithLogger(log).Build()`. Routes use builder: `NewRouter(svc, db).WithMiddlewares(...).Build()`. Service methods use protobuf structs for ALL parameters/return types (NO primitives, NO maps). `cmd/main.go` calls ONLY handlers/services (NEVER `internal/`).
+- **X. Service Layer Architecture**: **Services implement ogen-generated `Handler` interface in `services/` package (NEVER in handlers/)**. Services are reusable Go packages with OpenAPI-defined interfaces. **ogen provides built-in validation from OpenAPI schema**. Builder pattern: `NewService(db).WithLogger(log).Build()`. Service methods use ogen-generated structs for ALL parameters/return types (NO primitives, NO maps). `cmd/main.go` calls ONLY services (NEVER `internal/`). No separate handlers/ package needed.
 - **XI. Distributed Tracing**: HTTP endpoints create OpenTracing spans with operation name (e.g., "POST /api/products"). Services create child spans. Database: ONE span per transaction (NOT per query). External calls propagate trace context. Errors set `span.SetTag("error", true)`. Dev uses `opentracing.NoopTracer{}`.
 - **XII. Context-Aware Operations**: Service methods accept `context.Context` as first parameter. Handlers use `r.Context()`. Database uses `db.WithContext(ctx)`. External calls use `http.NewRequestWithContext(ctx, ...)`. Long-running ops check cancellation periodically. Tests verify cancellation behavior.
 - **XIII. Error Handling Strategy**: Service Layer defines sentinel errors in `services/errors.go`, wraps with `fmt.Errorf("%w")`. HTTP Layer defines error codes in `handlers/error_codes.go` with `ServiceErr` field. `HandleServiceError()` provides automatic mapping (NO switch statements). **Environment-Aware Details**: ErrorResponse includes `details` field with full error chain by default; hidden when `HIDE_ERROR_DETAILS=true`. `RespondWithError(w, errCode, err)` always passes original error. ALL errors have test cases. Tests use error code definitions (NOT literal strings).

@@ -29,6 +29,105 @@ Write integration tests following Principle INTEGRATION_TESTING - use real Postg
 
 **Rationale**: Integration tests catch real-world issues mocks cannot (constraints, transactions, serialization). Real fixtures validate actual database behavior. Mocks in implementation code create fake abstraction layers that hide real behavior.
 
+## Principle API_STRUCTS: Use ogen API Structs (Never Plain JSON)
+
+**CRITICAL**: Tests MUST use ogen-generated API structs for request bodies. NEVER use plain JSON strings.
+
+### Why API Structs Over Plain JSON
+
+| Problem with Plain JSON | Benefit of API Structs |
+|------------------------|------------------------|
+| No compile-time type checking | Compiler catches field name typos |
+| Easy to miss required fields | Struct enforces required fields |
+| JSON field names can drift from API | Struct stays in sync with OpenAPI |
+| No IDE autocomplete | Full IDE support |
+| Refactoring doesn't update tests | Refactoring updates all usages |
+
+### Helper Function for ogen Types
+
+ogen types have custom `MarshalJSON` methods. Use this helper:
+
+```go
+// ogenEncoder is an interface for ogen-generated types that have MarshalJSON
+type ogenEncoder interface {
+    MarshalJSON() ([]byte, error)
+}
+
+// newAPIRequest creates an HTTP request with an ogen API struct as body
+func newAPIRequest(t *testing.T, method, path string, body ogenEncoder) *http.Request {
+    t.Helper()
+    var bodyReader io.Reader
+    var contentLength int64
+
+    if body != nil {
+        data, err := body.MarshalJSON()
+        if err != nil {
+            t.Fatalf("Failed to marshal request body: %v", err)
+        }
+        bodyReader = bytes.NewReader(data)
+        contentLength = int64(len(data))
+    }
+
+    req := httptest.NewRequest(method, path, bodyReader)
+    if body != nil {
+        req.Header.Set("Content-Type", "application/json")
+        req.ContentLength = contentLength
+    }
+    return req
+}
+```
+
+### Example: WRONG vs CORRECT
+
+```go
+// ❌ WRONG: Plain JSON string - no type safety
+jsonBody := `{"firstName":"John","lastName":"Doe","email":"john@test.com","role":"admin"}`
+req := httptest.NewRequest("POST", "/users", strings.NewReader(jsonBody))
+
+// ✅ CORRECT: ogen API struct - type-safe, IDE support
+createReq := &api.CreateUserRequest{
+    FirstName: "John",
+    LastName:  "Doe",
+    Email:     "john@test.com",
+    Role:      api.UserRoleAdmin,
+}
+req := newAPIRequest(t, "POST", "/users", createReq)
+```
+
+### Table-Driven Tests with API Structs
+
+```go
+testCases := []struct {
+    name       string
+    request    *api.LoginRequest  // ✅ Use API struct type
+    wantStatus int
+}{
+    {
+        name: "valid credentials",
+        request: &api.LoginRequest{
+            Email:    "test@test.com",
+            Password: "password123",
+        },
+        wantStatus: http.StatusOK,
+    },
+    {
+        name: "invalid password",
+        request: &api.LoginRequest{
+            Email:    "test@test.com",
+            Password: "wrongpassword",
+        },
+        wantStatus: http.StatusUnauthorized,
+    },
+}
+
+for _, tc := range testCases {
+    t.Run(tc.name, func(t *testing.T) {
+        req := newAPIRequest(t, "POST", "/auth/login", tc.request)
+        // ...
+    })
+}
+```
+
 ## Principle COMPLETE_TEST_DATA: Fill All Struct Fields Completely
 
 **CRITICAL**: When creating test input data or expected response structs, you MUST:
@@ -670,11 +769,147 @@ if diff := cmp.Diff(expected, actual, protocmp.Transform()); diff != "" {
 }
 ```
 
+## Root Cause Tracing (Debugging Discipline)
+
+When tests fail or bugs are reported, apply systematic root cause analysis before implementing fixes.
+
+### Core Principles
+
+- Problems MUST be traced backward through the call chain to find the original trigger
+- Symptoms MUST be distinguished from root causes
+- Fixes MUST address the source of the problem, NOT work around symptoms
+- Test cases MUST NOT be removed or weakened to make tests pass
+- Debuggers and logging MUST be used to understand control flow
+- Multiple potential causes MUST be systematically eliminated
+- Root cause MUST be verified through testing before closing the issue
+
+### No-Give-Up Rule (NON-NEGOTIABLE)
+
+AI agents MUST NEVER abandon a problem by:
+- Reverting to "simpler" approaches that avoid the actual issue
+- Saying "this won't work easily with this architecture"
+- Removing tests or features because they're "too complex"
+- Giving up after initial failures without exhausting root cause analysis
+
+Instead, AI agents MUST:
+1. Continue investigating until the root cause is found
+2. Try multiple hypotheses systematically
+3. Read source code to understand the actual implementation
+4. Document findings even if the fix requires architectural changes
+5. Only escalate to the user when genuinely blocked after thorough investigation
+
+### Debugging Process
+
+#### Step 1: Reproduce
+Create a reliable reproduction case:
+- Write a failing integration test
+- Use table-driven design with descriptive name
+- Test through root mux ServeHTTP
+
+```go
+{name: "BUG-123: PUT product returns 500 for valid request"}
+```
+
+#### Step 2: Observe
+Gather evidence through logs, debugger, tests:
+- Add temporary logging in service layers
+- Check database state before/after operations
+- Examine error responses and stack traces
+- Use `t.Logf()` to output intermediate values
+
+```go
+t.Logf("Request body: %s", string(reqBody))
+t.Logf("Response: status=%d body=%s", rec.Code, rec.Body.String())
+t.Logf("DB state: %+v", product)
+```
+
+#### Step 3: Hypothesize
+Form theories about root cause:
+- List all possible causes
+- Rank by likelihood based on evidence
+- Consider recent changes that might have introduced the issue
+
+Common Go backend root causes:
+- **Validation**: Missing or incorrect validation in service layer
+- **Database**: Wrong GORM query, missing preload, constraint violation
+- **Serialization**: JSON field tags, ogen type marshaling
+- **Context**: Missing `WithContext(ctx)`, context cancellation
+- **Concurrency**: Race condition, missing mutex
+
+#### Step 4: Test
+Design experiments to validate/invalidate hypotheses:
+- Test one hypothesis at a time
+- Use binary search to narrow down the problem
+- Add temporary debug code to verify assumptions
+
+```go
+var count int64
+db.Model(&models.Product{}).Count(&count)
+t.Logf("Product count after create: %d", count)
+```
+
+#### Step 5: Fix
+Implement fix addressing root cause:
+- Fix the source, not the symptom
+- Ensure fix doesn't break existing functionality
+- Keep fix minimal and focused
+
+#### Step 6: Verify
+Run the reproduction test:
+```bash
+go test -v -run "BUG-" ./...
+```
+
+Run full test suite:
+```bash
+go test -v -race ./...
+```
+
+#### Step 7: Document
+Update docs/tests to prevent regression:
+- Keep the regression test with bug reference in name
+- Update API documentation if behavior was unclear
+- Add comments explaining non-obvious fixes
+
+### Common Error Patterns
+
+| Error | Possible Causes |
+|-------|-----------------|
+| "record not found" but data exists | Wrong ID field, soft delete filtering, incorrect query |
+| "duplicate key" on create | Unique constraint, ID not auto-generated |
+| "context canceled" unexpectedly | Handler not using `r.Context()`, client disconnect |
+| "invalid request" but looks valid | JSON field case mismatch, missing Content-Type |
+| Test passes locally, fails in CI | Race condition, time-dependent, order-dependent |
+
+### Test Fix Discipline
+
+When tests fail:
+- NEVER use `t.Skip()` to avoid fixing a complicated test
+- ALWAYS trace the root cause before implementing fixes
+- When API changes break tests, update assertions to match new behavior
+- Remove tests only for removed functionality
+
+## Test Package Organization
+
+Integration tests SHOULD be in a separate `tests/` package:
+
+```
+tests/
+├── testutil_test.go     # setupTestDB, truncateTables, fixture creators
+└── product_test.go      # Integration tests
+```
+
+**Benefits**:
+- Keeps service packages clean
+- Allows tests to import from multiple packages without circular dependencies
+- Test helpers are co-located with tests
+
 ## AI Agent Requirements
 
 - MUST use real PostgreSQL via testcontainers (NO mocking)
 - MUST test through root mux ServeHTTP (NOT individual handlers)
 - MUST use table-driven tests with descriptive names
+- **MUST use ogen API structs for request bodies (NEVER plain JSON strings)**
 - MUST use `cmp.Diff()` for ALL struct comparisons (NEVER individual field assertions)
 - MUST fill ALL struct fields completely (no empty arrays, no nil nested structs)
 - MUST have at least 2 elements in every array/slice field
@@ -684,10 +919,13 @@ if diff := cmp.Diff(expected, actual, protocmp.Transform()); diff != "" {
 - MUST build expected structs entirely from input data
 - MUST verify tests FAIL before implementation
 - MUST run tests after EVERY code change
+- MUST apply root cause tracing for test failures - no superficial fixes
+- MUST write failing reproduction test BEFORE attempting any fix
+- MUST document root cause analysis process
 
 ## See Also
 
 - `/theplant.testdb` - Test database setup with testcontainers
-- `/theplant.service` - Service layer with builder pattern
-- `/theplant.routes` - HTTP routing setup
+- `/theplant.bugfix` - Bug fix workflow with reproduction-first debugging
+- `/theplant.system-exploration` - Trace code paths before writing tests
 - `/theplant.errors` - Error handling strategy
