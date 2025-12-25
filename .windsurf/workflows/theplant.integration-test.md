@@ -521,16 +521,13 @@ func TestProductAPI(t *testing.T) {
                     t.Fatalf("failed to unmarshal response: %v", err)
                 }
                 
-                // Use actual values for generated fields (ID, timestamps)
-                expected := &pb.Product{
-                    Id:        actual.Id,        // Generated UUID
-                    Name:      tc.wantProduct.Name,
-                    Sku:       tc.wantProduct.Sku,
-                    CreatedAt: actual.CreatedAt, // Generated timestamp
-                    UpdatedAt: actual.UpdatedAt, // Generated timestamp
+                // Use cmpopts.IgnoreFields for generated fields (ID, timestamps)
+                opts := cmp.Options{
+                    protocmp.Transform(),
+                    protocmp.IgnoreFields(&pb.Product{}, "id", "created_at", "updated_at"),
                 }
                 
-                if diff := cmp.Diff(expected, &actual, protocmp.Transform()); diff != "" {
+                if diff := cmp.Diff(tc.wantProduct, &actual, opts...); diff != "" {
                     t.Errorf("Product mismatch (-want +got):\n%s", diff)
                 }
             }
@@ -631,16 +628,21 @@ func TestProduct_FieldComparison(t *testing.T) {
 func TestProduct_StructComparison(t *testing.T) {
     actual := getProduct()
     
+    // Build expected from known input values only
     expected := &pb.Product{
-        Id:          actual.Id,  // Use actual for generated fields
         Name:        "Test Product",
         Sku:         "SKU-001",
         Price:       1999,
         Description: "A test product",
-        CreatedAt:   actual.CreatedAt,  // Use actual for timestamps
     }
     
-    if diff := cmp.Diff(expected, actual, protocmp.Transform()); diff != "" {
+    // Use cmpopts.IgnoreFields for generated fields (ID, timestamps)
+    opts := cmp.Options{
+        protocmp.Transform(),
+        protocmp.IgnoreFields(&pb.Product{}, "id", "created_at", "updated_at"),
+    }
+    
+    if diff := cmp.Diff(expected, actual, opts...); diff != "" {
         t.Errorf("Product mismatch (-want +got):\n%s", diff)
     }
 }
@@ -648,31 +650,44 @@ func TestProduct_StructComparison(t *testing.T) {
 
 ### Handling Dynamic Fields (IDs, Timestamps)
 
-For fields that are generated (UUIDs, timestamps), use the actual value in expected:
+For fields that are generated (UUIDs, timestamps), use `cmpopts.IgnoreFields` or `protocmp.IgnoreFields`:
 
 ```go
+// Build expected from known input values only - do NOT copy from actual
 expected := &pb.Product{
-    Id:        actual.Id,        // ✅ Generated UUID - use actual
-    Name:      "Test Product",   // ✅ From request - use expected value
-    Sku:       "SKU-001",        // ✅ From request - use expected value
-    CreatedAt: actual.CreatedAt, // ✅ Generated timestamp - use actual
-    UpdatedAt: actual.UpdatedAt, // ✅ Generated timestamp - use actual
+    Name: "Test Product",   // ✅ From request - use expected value
+    Sku:  "SKU-001",        // ✅ From request - use expected value
+}
+
+// Use IgnoreFields for generated fields
+opts := cmp.Options{
+    protocmp.Transform(),
+    protocmp.IgnoreFields(&pb.Product{}, "id", "created_at", "updated_at"),
+}
+
+if diff := cmp.Diff(expected, actual, opts...); diff != "" {
+    t.Errorf("Product mismatch (-want +got):\n%s", diff)
 }
 ```
 
 ### Comparing Lists/Slices
 
 ```go
-// ✅ CORRECT: Compare entire list
+// ✅ CORRECT: Compare entire list with IgnoreFields for generated fields
 expected := &pb.ListProductsResponse{
     Products: []*pb.Product{
-        {Id: products[0].Id, Name: "Product A", Sku: "SKU-A"},
-        {Id: products[1].Id, Name: "Product B", Sku: "SKU-B"},
+        {Name: "Product A", Sku: "SKU-A"},
+        {Name: "Product B", Sku: "SKU-B"},
     },
     Total: 2,
 }
 
-if diff := cmp.Diff(expected, actual, protocmp.Transform()); diff != "" {
+opts := cmp.Options{
+    protocmp.Transform(),
+    protocmp.IgnoreFields(&pb.Product{}, "id", "created_at", "updated_at"),
+}
+
+if diff := cmp.Diff(expected, actual, opts...); diff != "" {
     t.Errorf("List mismatch (-want +got):\n%s", diff)
 }
 
@@ -684,15 +699,27 @@ if len(actual.Products) != 2 {
 
 ### Ignoring Specific Fields
 
-When you need to ignore certain fields (e.g., always-changing timestamps):
+For protobuf types, use `protocmp.IgnoreFields` with proto field names (snake_case):
 
 ```go
-import "github.com/google/go-cmp/cmp/cmpopts"
-
-// Ignore specific fields
+// For protobuf types - use protocmp.IgnoreFields with proto field names
 opts := cmp.Options{
     protocmp.Transform(),
-    cmpopts.IgnoreFields(&pb.Product{}, "CreatedAt", "UpdatedAt"),
+    protocmp.IgnoreFields(&pb.Product{}, "id", "created_at", "updated_at"),
+}
+
+if diff := cmp.Diff(expected, actual, opts...); diff != "" {
+    t.Errorf("Mismatch (-want +got):\n%s", diff)
+}
+```
+
+For non-protobuf Go structs, use `cmpopts.IgnoreFields` with Go field names (PascalCase):
+
+```go
+// For regular Go structs - use cmpopts.IgnoreFields with Go field names
+opts := cmp.Options{
+    cmpopts.IgnoreFields(pim.Product{}, "Id", "CreatedAt", "UpdatedAt"),
+    cmpopts.EquateEmpty(),
 }
 
 if diff := cmp.Diff(expected, actual, opts...); diff != "" {
@@ -763,8 +790,22 @@ if expected == actual { t.Error("mismatch") }
 ### Summary: ALWAYS Do This
 
 ```go
-// ✅ ALWAYS use cmp.Diff with protocmp.Transform
-if diff := cmp.Diff(expected, actual, protocmp.Transform()); diff != "" {
+// ✅ ALWAYS use cmp.Diff with IgnoreFields for generated fields
+// For protobuf types:
+opts := cmp.Options{
+    protocmp.Transform(),
+    protocmp.IgnoreFields(&pb.Product{}, "id", "created_at", "updated_at"),
+}
+if diff := cmp.Diff(expected, actual, opts...); diff != "" {
+    t.Errorf("Mismatch (-want +got):\n%s", diff)
+}
+
+// For regular Go structs:
+opts := cmp.Options{
+    cmpopts.IgnoreFields(Product{}, "Id", "CreatedAt", "UpdatedAt"),
+    cmpopts.EquateEmpty(),
+}
+if diff := cmp.Diff(expected, actual, opts...); diff != "" {
     t.Errorf("Mismatch (-want +got):\n%s", diff)
 }
 ```
