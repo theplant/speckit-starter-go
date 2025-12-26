@@ -365,6 +365,24 @@ opts := cmp.Options{
 
 ## Execution Steps
 
+First, create a task plan using `update_plan`:
+
+```
+Call update_plan with:
+- explanation: "Integration test workflow for <feature>"
+- plan: [
+    {"step": "Design API contract (OpenAPI/Protobuf)", "status": "pending"},
+    {"step": "Setup test database with testcontainers", "status": "pending"},
+    {"step": "Write table-driven tests with API structs", "status": "pending"},
+    {"step": "Run tests and verify they fail first", "status": "pending"},
+    {"step": "Implement minimal code to pass tests", "status": "pending"},
+    {"step": "Run tests with race detector", "status": "pending"},
+    {"step": "Refactor while keeping tests green", "status": "pending"}
+  ]
+```
+
+Then execute each step, updating status to `in_progress` before starting and `completed` after finishing.
+
 ### 1. Design API Contract
 
 Define API contract (OpenAPI or Protobuf) → generate Go code:
@@ -378,12 +396,32 @@ go generate ./...
 
 ### 2. Setup Test Database
 
-Use testcontainers for automatic PostgreSQL lifecycle:
+Use testcontainers for automatic PostgreSQL lifecycle.
+
+**Prerequisites:**
+- Docker must be available (local/CI environments)
+- Install testcontainers-go:
+```bash
+go get github.com/testcontainers/testcontainers-go
+go get github.com/testcontainers/testcontainers-go/modules/postgres
+```
 
 ```go
+import (
+    "context"
+    "testing"
+    
+    "github.com/testcontainers/testcontainers-go"
+    "github.com/testcontainers/testcontainers-go/modules/postgres"
+    "github.com/testcontainers/testcontainers-go/wait"
+    "gorm.io/driver/postgres"
+    "gorm.io/gorm"
+)
+
 func setupTestDB(t *testing.T) (*gorm.DB, func()) {
     ctx := context.Background()
     
+    // Create PostgreSQL container
     pgContainer, err := postgres.RunContainer(ctx,
         testcontainers.WithImage("postgres:15-alpine"),
         postgres.WithDatabase("testdb"),
@@ -398,23 +436,67 @@ func setupTestDB(t *testing.T) (*gorm.DB, func()) {
         t.Fatalf("Failed to start PostgreSQL container: %v", err)
     }
     
+    // Cleanup function
     cleanup := func() {
-        pgContainer.Terminate(ctx)
+        if err := pgContainer.Terminate(ctx); err != nil {
+            t.Logf("Failed to terminate container: %v", err)
+        }
     }
     
-    connStr, _ := pgContainer.ConnectionString(ctx, "sslmode=disable")
-    db, _ := gorm.Open(postgres.Open(connStr), &gorm.Config{})
-    db.AutoMigrate(&models.Product{} /* add models */)
+    // Get connection string
+    connStr, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
+    if err != nil {
+        cleanup()
+        t.Fatalf("Failed to get connection string: %v", err)
+    }
+    
+    // Connect using GORM
+    db, err := gorm.Open(postgres.Open(connStr), &gorm.Config{})
+    if err != nil {
+        cleanup()
+        t.Fatalf("Failed to connect to database: %v", err)
+    }
+    
+    // Run GORM AutoMigrate with internal models
+    if err := db.AutoMigrate(&models.Product{} /* add other models */); err != nil {
+        cleanup()
+        t.Fatalf("Failed to run migrations: %v", err)
+    }
     
     return db, cleanup
 }
 
+// Create helper function for truncation (reusable across all tests)
 func truncateTables(db *gorm.DB, tables ...string) {
+    // Truncate in reverse order (children before parents)
     for i := len(tables) - 1; i >= 0; i-- {
         db.Exec(fmt.Sprintf("TRUNCATE TABLE %s CASCADE", tables[i]))
     }
 }
+
+// Usage in tests
+func TestProductCreate(t *testing.T) {
+    db, cleanup := setupTestDB(t)
+    defer cleanup()
+    defer truncateTables(db, "products", "categories")  // Children before parents
+    
+    // Test implementation...
+}
 ```
+
+**Benefits of Truncation Strategy:**
+- Tests real production behavior with commits
+- Works with any code structure
+- Simple and fast (~1-5ms overhead)
+- Handles foreign key constraints with CASCADE
+
+**Test Database AI Agent Requirements:**
+- Use `testcontainers.PostgresContainer` for automatic PostgreSQL lifecycle
+- Setup schema with GORM `AutoMigrate` (matches production)
+- Cleanup with `defer container.Terminate(ctx)` pattern
+- Truncate tables after each test using `defer` pattern
+- Use `TRUNCATE ... CASCADE` to handle foreign key constraints
+- Truncate in reverse dependency order (children before parents)
 
 ### 3. Write Table-Driven Tests (Principle TABLE_DRIVEN)
 
@@ -966,7 +1048,7 @@ tests/
 
 ## See Also
 
-- `/theplant.testdb` - Test database setup with testcontainers
 - `/theplant.bugfix` - Bug fix workflow with reproduction-first debugging
 - `/theplant.system-exploration` - Trace code paths before writing tests
 - `/theplant.errors` - Error handling strategy
+- `/theplant.openapi` - OpenAPI code generation with ogen

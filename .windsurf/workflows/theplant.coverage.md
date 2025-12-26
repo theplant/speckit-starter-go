@@ -16,6 +16,23 @@ Analyze test coverage and recover untested code paths following constitution pri
 
 ## Execution Steps
 
+First, create a task plan using `update_plan`:
+
+```
+Call update_plan with:
+- explanation: "Test coverage analysis and improvement"
+- plan: [
+    {"step": "Run coverage analysis with -coverpkg", "status": "pending"},
+    {"step": "Identify files with low coverage", "status": "pending"},
+    {"step": "Analyze untested code paths", "status": "pending"},
+    {"step": "Write tests for identified gaps", "status": "pending"},
+    {"step": "Verify coverage improvement", "status": "pending"},
+    {"step": "Clean dead code if any", "status": "pending"}
+  ]
+```
+
+Then execute each step, updating status to `in_progress` before starting and `completed` after finishing.
+
 ### Step 1: Identify Gaps
 
 Run coverage analysis with `-coverpkg` to count cross-package calls:

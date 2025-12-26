@@ -14,6 +14,23 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 Download a reference project repository into the current workspace for pattern and best practice reference, ensuring it's excluded from version control.
 
+## Execution Steps
+
+First, create a task plan using `update_plan`:
+
+```
+Call update_plan with:
+- explanation: "Download reference project <project-name>"
+- plan: [
+    {"step": "Update .gitignore to exclude .reference/", "status": "pending"},
+    {"step": "Download reference project with tiged", "status": "pending"},
+    {"step": "Verify download and git status", "status": "pending"},
+    {"step": "Document reference in .reference/README.md", "status": "pending"}
+  ]
+```
+
+Then execute each step, updating status to `in_progress` before starting and `completed` after finishing.
+
 ## Steps
 
 ### Step 1: Critical Rules

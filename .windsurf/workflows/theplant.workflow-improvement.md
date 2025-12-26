@@ -14,21 +14,25 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 Analyze conversation issues and update workflows with generalized learnings.
 
-## How to Execute This Workflow
 
-**⚠️ MANDATORY: AI MUST run the workflow-runner command below and follow its output.**
+## Execution Steps
 
-**DO NOT read the Steps section below and execute them manually.** The runner handles:
-- Step sequencing and state tracking
-- Nested workflow execution
-- AI task delegation with proper context
+First, create a task plan using `update_plan`:
 
-```bash
-deno run -A https://raw.githubusercontent.com/theplant/workflow-runner/HEAD/run.ts theplant.workflow-improvement
+```
+Call update_plan with:
+- explanation: "Workflow improvement from conversation learnings"
+- plan: [
+    {"step": "Identify issues and blockers from conversation", "status": "pending"},
+    {"step": "Categorize issues by target workflow", "status": "pending"},
+    {"step": "Read target workflow files", "status": "pending"},
+    {"step": "Apply updates to workflow files", "status": "pending"},
+    {"step": "Update update_plan Execution Steps if workflow steps changed", "status": "pending"},
+    {"step": "Sync with constitution and templates", "status": "pending"}
+  ]
 ```
 
-Run this command, then follow the runner's instructions. The runner will tell you what to do next.
-
+Then execute each step, updating status to `in_progress` before starting and `completed` after finishing.
 
 ## Steps
 
@@ -55,6 +59,11 @@ Run this command, then follow the runner's instructions. The runner will tell yo
    - `.specify/templates/plan-template.md` - Implementation plan template
    - `.specify/templates/tasks-template.md` - Task list template
    - Keep all documents consistent with the same patterns and principles
+
+8. **CRITICAL: Update `update_plan` Execution Steps** - When modifying a workflow's steps, you MUST also update the `update_plan` call in the "Execution Steps" section to match:
+   - The plan steps in the `update_plan` call MUST reflect the actual workflow steps
+   - Step names should be concise but descriptive
+   - All workflows should have an `update_plan` call at the start of "Execution Steps"
 
 #### Issue Identification
 

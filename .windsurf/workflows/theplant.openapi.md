@@ -16,10 +16,11 @@ Generate Go types and server interfaces from OpenAPI specifications using ogen (
 
 ## Architecture
 
-**CRITICAL**: The `services/` package implements the ogen-generated `Handler` interface directly. This allows:
+**CRITICAL**: The `services/` package contains an `OgenHandler` that implements the ogen-generated `Handler` interface and delegates to individual domain services. This allows:
+- Clean separation between API contract (ogen Handler) and business logic (domain services)
 - Services to be imported and used as Go packages by external applications
 - OpenAPI spec defines the service contract (interface)
-- No separate `handlers/` package needed for HTTP logic - ogen handles routing/serialization
+- Centralized nil-service checks and error handling
 
 ```
 api/
@@ -29,15 +30,17 @@ api/
     ├── gen.go         # go:generate directive
     └── oas_*.go       # generated types, server, client
 
-services/              # PUBLIC - implements ogen Handler interface
-├── <domain>_service.go  # Implements api/gen/<domain>.Handler
+services/              # PUBLIC - business logic and ogen Handler
+├── ogen_handler.go   # Implements api/gen/<domain>.Handler, delegates to services
+├── <domain>_service.go  # Domain-specific business logic
 ├── errors.go         # Sentinel errors
 └── migrations.go     # AutoMigrate() for external apps
 
-handlers/              # Server setup with error handling
-├── server.go         # NewServer() wrapper with ErrorHandler
+handlers/              # HTTP routing and middleware
+├── routes.go         # Router builder with ogen server setup
 ├── error_handler.go  # ogen ErrorHandler implementation
-└── error_codes.go    # Error code definitions
+├── error_codes.go    # Error code definitions
+└── middleware.go     # HTTP middlewares
 
 internal/
 ├── models/           # GORM models (internal only)
@@ -46,9 +49,29 @@ internal/
 
 ## Execution Steps
 
+First, create a task plan using `update_plan`:
+
+```
+Call update_plan with:
+- explanation: "OpenAPI code generation workflow for <domain>"
+- plan: [
+    {"step": "Install ogen if not available", "status": "pending"},
+    {"step": "Define OpenAPI contract in api/openapi/<domain>.yaml", "status": "pending"},
+    {"step": "Add go:generate directive to api/gen/<domain>/gen.go", "status": "pending"},
+    {"step": "Generate Go code with go generate", "status": "pending"},
+    {"step": "Implement OgenHandler in services/ogen_handler.go", "status": "pending"},
+    {"step": "Implement domain services in services/<domain>_service.go", "status": "pending"},
+    {"step": "Setup routes with ogen server in handlers/routes.go", "status": "pending"},
+    {"step": "Verify compilation and tests pass", "status": "pending"}
+  ]
+```
+
+Then execute each step, updating status to `in_progress` before starting and `completed` after finishing.
+
 ### Prerequisites
 
 Install ogen if not available:
+// turbo
 ```bash
 go install github.com/ogen-go/ogen/cmd/ogen@latest
 ```
@@ -73,8 +96,94 @@ package <domain>
 go generate ./...
 ```
 
-#### 4. Implement Handler in Services Package
-**CRITICAL**: Services implement the ogen `Handler` interface directly (NOT in handlers package):
+#### 4. Implement OgenHandler in Services Package
+
+**CRITICAL**: Create an `OgenHandler` in the services package that implements the ogen `Handler` interface and delegates to individual domain services:
+
+```go
+// services/ogen_handler.go
+package services
+
+import (
+    "context"
+    
+    api "yourapp/api/gen/product"
+)
+
+// OgenHandler implements the ogen-generated api.Handler interface
+// It delegates to the underlying domain services
+type OgenHandler struct {
+    productService  ProductService
+    categoryService CategoryService
+    // Add other services as needed
+}
+
+// OgenHandlerBuilder builds an OgenHandler with optional services
+type OgenHandlerBuilder struct {
+    productService  ProductService
+    categoryService CategoryService
+}
+
+// NewOgenHandler creates a new OgenHandler builder
+func NewOgenHandler() *OgenHandlerBuilder {
+    return &OgenHandlerBuilder{}
+}
+
+// WithProductService adds product service
+func (b *OgenHandlerBuilder) WithProductService(svc ProductService) *OgenHandlerBuilder {
+    b.productService = svc
+    return b
+}
+
+// WithCategoryService adds category service
+func (b *OgenHandlerBuilder) WithCategoryService(svc CategoryService) *OgenHandlerBuilder {
+    b.categoryService = svc
+    return b
+}
+
+// Build creates the OgenHandler instance
+func (b *OgenHandlerBuilder) Build() *OgenHandler {
+    return &OgenHandler{
+        productService:  b.productService,
+        categoryService: b.categoryService,
+    }
+}
+
+// Ensure OgenHandler implements api.Handler
+var _ api.Handler = (*OgenHandler)(nil)
+
+// ============================================================================
+// Product Operations - delegate to ProductService
+// ============================================================================
+
+// CreateProduct implements api.Handler
+func (h *OgenHandler) CreateProduct(ctx context.Context, req *api.CreateProductReq) (*api.Product, error) {
+    if h.productService == nil {
+        return nil, ErrMissingRequired
+    }
+    return h.productService.Create(ctx, req)
+}
+
+// GetProduct implements api.Handler
+func (h *OgenHandler) GetProduct(ctx context.Context, params api.GetProductParams) (*api.Product, error) {
+    if h.productService == nil {
+        return nil, ErrMissingRequired
+    }
+    return h.productService.Get(ctx, params.ProductId)
+}
+
+// ListProducts implements api.Handler
+func (h *OgenHandler) ListProducts(ctx context.Context, params api.ListProductsParams) (*api.ListProductsResponse, error) {
+    if h.productService == nil {
+        return nil, ErrMissingRequired
+    }
+    return h.productService.List(ctx, params)
+}
+```
+
+#### 5. Implement Domain Services
+
+Domain services contain the actual business logic:
 
 ```go
 // services/product_service.go
@@ -82,27 +191,30 @@ package services
 
 import (
     "context"
+    "fmt"
     
     api "yourapp/api/gen/product"
     "yourapp/internal/models"
     "gorm.io/gorm"
 )
 
-// ProductService implements api.Handler interface
-type ProductService struct {
-    db     *gorm.DB
-    logger Logger  // Optional
-    cache  Cache   // Optional
+// ProductService interface for product operations
+type ProductService interface {
+    Create(ctx context.Context, req *api.CreateProductReq) (*api.Product, error)
+    Get(ctx context.Context, id string) (*api.Product, error)
+    List(ctx context.Context, params api.ListProductsParams) (*api.ListProductsResponse, error)
 }
 
-// Ensure ProductService implements the generated Handler interface
-var _ api.Handler = (*ProductService)(nil)
+// productServiceImpl implements ProductService
+type productServiceImpl struct {
+    db     *gorm.DB
+    logger Logger  // Optional
+}
 
 // Builder pattern for dependency injection
 type productServiceBuilder struct {
     db     *gorm.DB
     logger Logger
-    cache  Cache
 }
 
 func NewProductService(db *gorm.DB) *productServiceBuilder {
@@ -114,25 +226,12 @@ func (b *productServiceBuilder) WithLogger(logger Logger) *productServiceBuilder
     return b
 }
 
-func (b *productServiceBuilder) WithCache(cache Cache) *productServiceBuilder {
-    b.cache = cache
-    return b
+func (b *productServiceBuilder) Build() ProductService {
+    return &productServiceImpl{db: b.db, logger: b.logger}
 }
 
-func (b *productServiceBuilder) Build() *ProductService {
-    return &ProductService{db: b.db, logger: b.logger, cache: b.cache}
-}
-
-// Implement ogen Handler interface methods
-func (s *ProductService) CreateProduct(ctx context.Context, req *api.CreateProductReq) (*api.Product, error) {
-    // Context cancellation check
-    select {
-    case <-ctx.Done():
-        return nil, ctx.Err()
-    default:
-    }
-    
-    // Business logic and validation
+// Create implements ProductService
+func (s *productServiceImpl) Create(ctx context.Context, req *api.CreateProductReq) (*api.Product, error) {
     product := &models.Product{Name: req.Name, SKU: req.Sku}
     
     if err := s.db.WithContext(ctx).Create(product).Error; err != nil {
@@ -145,11 +244,12 @@ func (s *ProductService) CreateProduct(ctx context.Context, req *api.CreateProdu
     return &api.Product{ID: product.ID, Name: product.Name, Sku: product.SKU}, nil
 }
 
-func (s *ProductService) GetProduct(ctx context.Context, params api.GetProductParams) (*api.Product, error) {
+// Get implements ProductService
+func (s *productServiceImpl) Get(ctx context.Context, id string) (*api.Product, error) {
     var product models.Product
-    if err := s.db.WithContext(ctx).First(&product, "id = ?", params.ID).Error; err != nil {
+    if err := s.db.WithContext(ctx).First(&product, "id = ?", id).Error; err != nil {
         if errors.Is(err, gorm.ErrRecordNotFound) {
-            return nil, fmt.Errorf("get product %s: %w", params.ID, ErrProductNotFound)
+            return nil, fmt.Errorf("get product %s: %w", id, ErrProductNotFound)
         }
         return nil, fmt.Errorf("query product: %w", err)
     }
@@ -157,27 +257,84 @@ func (s *ProductService) GetProduct(ctx context.Context, params api.GetProductPa
 }
 ```
 
-#### 5. Setup Server with ErrorHandler
+#### 6. Setup Routes with ogen Server
 
-**CRITICAL**: Server setup should be in `handlers/` package to encapsulate error handling configuration. This prevents service errors from leaking to users.
-
-Create `handlers/server.go`:
+**CRITICAL**: Use the router builder pattern in `handlers/` to create the ogen server with error handling and middlewares:
 
 ```go
+// handlers/routes.go
 package handlers
 
 import (
     "net/http"
     
     api "yourapp/api/gen/product"
+    "yourapp/services"
 )
 
-// NewServer creates an ogen server with proper error handling configured
-func NewServer(h api.Handler) (*api.Server, error) {
-    return api.NewServer(
-        h,
+// Middleware is a function that wraps an http.Handler
+type Middleware func(http.Handler) http.Handler
+
+// routerBuilder configures HTTP routes with optional services using ogen server
+type routerBuilder struct {
+    productService  services.ProductService
+    categoryService services.CategoryService
+    middlewares     []Middleware
+}
+
+// NewRouter creates a router builder
+func NewRouter(productService services.ProductService) *routerBuilder {
+    return &routerBuilder{
+        productService: productService,
+    }
+}
+
+// WithCategoryService adds category service
+func (b *routerBuilder) WithCategoryService(svc services.CategoryService) *routerBuilder {
+    b.categoryService = svc
+    return b
+}
+
+// WithMiddlewares adds middlewares to the stack (applied in order)
+func (b *routerBuilder) WithMiddlewares(mws ...Middleware) *routerBuilder {
+    b.middlewares = append(b.middlewares, mws...)
+    return b
+}
+
+// Build creates the configured HTTP handler using ogen server
+func (b *routerBuilder) Build() (http.Handler, error) {
+    // Build the ogen handler from services package
+    handler := services.NewOgenHandler().
+        WithProductService(b.productService).
+        WithCategoryService(b.categoryService).
+        Build()
+
+    // Create ogen server with error handler
+    server, err := api.NewServer(handler,
         api.WithErrorHandler(OgenErrorHandler),
     )
+    if err != nil {
+        return nil, err
+    }
+
+    // Apply middlewares (in order provided)
+    var h http.Handler = server
+    for _, mw := range b.middlewares {
+        h = mw(h)
+    }
+
+    return h, nil
+}
+
+// DefaultMiddlewares returns the standard middleware stack for production
+func DefaultMiddlewares() []Middleware {
+    return []Middleware{
+        recoveryMiddleware,
+        TracingMiddleware(),
+        LoggingMiddleware(),
+        requestIDMiddleware,
+        CORSMiddleware(DefaultCORSConfig()),
+    }
 }
 ```
 
@@ -257,33 +414,45 @@ func main() {
         handlers.SetHideErrorDetails(true)
     }
     
-    // Service implements ogen Handler interface
-    service := services.NewProductService(db).
+    // Create domain services
+    productService := services.NewProductService(db).
         WithLogger(logger).
         Build()
     
-    // Create server via handlers package (includes ErrorHandler)
-    server, err := handlers.NewServer(service)
+    categoryService := services.NewCategoryService(db).Build()
+    
+    // Build router with ogen server
+    handler, err := handlers.NewRouter(productService).
+        WithCategoryService(categoryService).
+        WithMiddlewares(handlers.DefaultMiddlewares()...).
+        Build()
     if err != nil {
         log.Fatal(err)
     }
     
-    http.ListenAndServe(":8080", server)
+    http.ListenAndServe(":8080", handler)
 }
 ```
 
-#### 6. Use as Go Package
+#### 7. Use as Go Package
 External applications can import and use the service directly:
 
 ```go
 // In another application
 import "yourapp/services"
 
-svc := services.NewProductService(db).Build()
-product, err := svc.CreateProduct(ctx, &api.CreateProductReq{Name: "Test"})
+// Use domain service directly
+productSvc := services.NewProductService(db).Build()
+product, err := productSvc.Create(ctx, &api.CreateProductReq{Name: "Test"})
+
+// Or use OgenHandler for full API compatibility
+handler := services.NewOgenHandler().
+    WithProductService(productSvc).
+    Build()
+product, err := handler.CreateProduct(ctx, &api.CreateProductReq{Name: "Test"})
 ```
 
-#### 7. Update
+#### 8. Update
 Regenerate code whenever OpenAPI spec changes:
 // turbo
 ```bash
@@ -292,11 +461,11 @@ go generate ./...
 
 ### Key Points
 
-- **CRITICAL**: Services implement ogen `Handler` interface (NEVER in handlers package)
-- **CRITICAL**: Server setup with `ErrorHandler` should be in `handlers/` package
+- **CRITICAL**: `OgenHandler` in services package implements ogen `Handler` interface and delegates to domain services
+- **CRITICAL**: Domain services contain business logic, `OgenHandler` handles nil-checks and delegation
+- **CRITICAL**: Router builder in `handlers/` creates ogen server with `ErrorHandler` and middlewares
 - Services are reusable Go packages with OpenAPI-defined interfaces
 - ogen handles HTTP routing, request parsing, response serialization
-- Services contain business logic, validation, and database operations
 - Builder pattern for dependency injection: `NewService(db).WithLogger(log).Build()`
 - Tests MUST use generated structs (NO `map[string]interface{}`)
 - Tests MUST compare structs using `cmp.Diff()`
@@ -308,13 +477,58 @@ go generate ./...
 - MUST check if OpenAPI spec exists in `api/openapi/` before generating code
 - MUST install `ogen` if not available: `go install github.com/ogen-go/ogen/cmd/ogen@latest`
 - MUST regenerate code whenever OpenAPI files change
-- MUST implement the generated `Handler` interface in `services/` package (NEVER in handlers/)
-- MUST create `handlers/server.go` with `NewServer()` that configures `ErrorHandler`
-- MUST use builder pattern for service construction
+- MUST create `services/ogen_handler.go` that implements `api.Handler` and delegates to domain services
+- MUST create domain services with interfaces (e.g., `ProductService`) and implementations
+- MUST create `handlers/routes.go` with router builder that creates ogen server with `ErrorHandler`
+- MUST use builder pattern for both `OgenHandler` and domain services
 - MUST use generated request/response types (NO manual struct definitions)
 - Services MUST be in public packages (NOT `internal/`) for reusability
 - ErrorHandler MUST map service sentinel errors to user-friendly responses
 - NEVER expose internal error details in production (use `HIDE_ERROR_DETAILS=true`)
+
+## Testing with ogen Server
+
+### Testing Through ogen Server (Principle SERVEHTTP_TESTING)
+
+```go
+func TestProductCreate(t *testing.T) {
+    db, cleanup := setupTestDB(t)
+    defer cleanup()
+    
+    // Create domain service
+    productService := services.NewProductService(db).Build()
+    
+    // Build router with ogen server
+    handler, err := handlers.NewRouter(productService).Build()
+    if err != nil {
+        t.Fatal(err)
+    }
+    
+    // Test through ogen server ServeHTTP
+    req := httptest.NewRequest("POST", "/api/v1/products", body)
+    req.Header.Set("Content-Type", "application/json")
+    rec := httptest.NewRecorder()
+    
+    handler.ServeHTTP(rec, req)  // ✅ Tests complete HTTP stack via ogen
+    
+    // Assertions...
+}
+```
+
+### Why ogen Server (Not Manual Routes)
+
+- ogen handles request validation based on OpenAPI schema
+- ogen handles response serialization
+- ogen handles path parameter extraction
+- Tests validate the complete API contract
+- No manual route registration that can drift from spec
+
+### Testing AI Agent Requirements
+
+- Tests MUST go through ogen server ServeHTTP (NOT individual service methods)
+- Tests MUST use ogen-generated request/response types
+- Tests MUST set `Content-Type: application/json` header
+- Build router with `handlers.NewRouter().Build()` for tests
 
 ### See Also
 

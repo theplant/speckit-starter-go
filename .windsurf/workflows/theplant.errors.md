@@ -14,6 +14,26 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 Implement comprehensive error handling with sentinel errors and automatic HTTP mapping (Principle ERROR_HANDLING).
 
+## Execution Steps
+
+First, create a task plan using `update_plan`:
+
+```
+Call update_plan with:
+- explanation: "Implement error handling for <domain>"
+- plan: [
+    {"step": "Define sentinel errors in services/errors.go", "status": "pending"},
+    {"step": "Define error codes in handlers/error_codes.go", "status": "pending"},
+    {"step": "Implement service error wrapping", "status": "pending"},
+    {"step": "Implement handler error mapping", "status": "pending"},
+    {"step": "Add ogen ErrorHandler if using ogen", "status": "pending"},
+    {"step": "Configure environment-aware error details", "status": "pending"},
+    {"step": "Write tests for error responses", "status": "pending"}
+  ]
+```
+
+Then execute each step, updating status to `in_progress` before starting and `completed` after finishing.
+
 ## Two-Layer Error Handling Strategy
 
 ### Service Layer: Sentinel Errors

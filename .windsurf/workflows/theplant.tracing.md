@@ -14,6 +14,25 @@ You **MUST** consider the user input before proceeding (if not empty).
 
 Implement distributed tracing with OpenTracing following Principle DISTRIBUTED_TRACING.
 
+## Execution Steps
+
+First, create a task plan using `update_plan`:
+
+```
+Call update_plan with:
+- explanation: "Implement distributed tracing for <service>"
+- plan: [
+    {"step": "Add OpenTracing dependency", "status": "pending"},
+    {"step": "Add spans to HTTP handlers", "status": "pending"},
+    {"step": "Add child spans to service methods", "status": "pending"},
+    {"step": "Configure context propagation", "status": "pending"},
+    {"step": "Setup noop tracer for tests", "status": "pending"},
+    {"step": "Configure production tracer (Jaeger)", "status": "pending"}
+  ]
+```
+
+Then execute each step, updating status to `in_progress` before starting and `completed` after finishing.
+
 ## Distributed Tracing
 
 ### Requirements

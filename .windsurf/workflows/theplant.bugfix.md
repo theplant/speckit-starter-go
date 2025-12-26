@@ -16,6 +16,24 @@ Fix bugs using reproduction-first debugging following constitution principles. W
 
 ## Execution Steps
 
+First, create a task plan using `update_plan`:
+
+```
+Call update_plan with:
+- explanation: "Bug fix workflow for <bug description>"
+- plan: [
+    {"step": "Capture failing request and extract test data", "status": "pending"},
+    {"step": "Write failing reproduction test", "status": "pending"},
+    {"step": "Verify test fails with reported error", "status": "pending"},
+    {"step": "Trace root cause through call chain", "status": "pending"},
+    {"step": "Implement fix at the source", "status": "pending"},
+    {"step": "Run reproduction test to verify fix", "status": "pending"},
+    {"step": "Run full test suite", "status": "pending"}
+  ]
+```
+
+Then execute each step, updating status to `in_progress` before starting and `completed` after finishing.
+
 ### Phase 1: Capture & Analyze
 
 1. **Capture the failing request**

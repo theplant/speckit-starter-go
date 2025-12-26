@@ -46,6 +46,24 @@ The WRITE trace reveals:
 
 ## Execution Steps
 
+First, create a task plan using `update_plan`:
+
+```
+Call update_plan with:
+- explanation: "System exploration for <feature/endpoint>"
+- plan: [
+    {"step": "Read route definitions in handlers/routes.go", "status": "pending"},
+    {"step": "Trace READ path (DB → API response)", "status": "pending"},
+    {"step": "Trace WRITE path (API request → DB)", "status": "pending"},
+    {"step": "Document code trace in test file", "status": "pending"},
+    {"step": "Identify required test data and fixtures", "status": "pending"},
+    {"step": "Identify test scenarios (success + error cases)", "status": "pending"},
+    {"step": "Write tests covering all scenarios", "status": "pending"}
+  ]
+```
+
+Then execute each step, updating status to `in_progress` before starting and `completed` after finishing.
+
 ### Step 1: Read Route Definitions
 
 Explore `handlers/routes.go` to find route registration:

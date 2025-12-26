@@ -43,6 +43,27 @@ Instead, AI agents MUST:
 4. Document findings even if the fix requires architectural changes
 5. Only escalate to the user when genuinely blocked after thorough investigation
 
+## Execution Steps
+
+First, create a task plan using `update_plan`:
+
+```
+Call update_plan with:
+- explanation: "Root cause tracing for <issue description>"
+- plan: [
+    {"step": "Create reliable reproduction case", "status": "pending"},
+    {"step": "Gather evidence through logs and debugger", "status": "pending"},
+    {"step": "Form and rank hypotheses", "status": "pending"},
+    {"step": "Test hypotheses systematically", "status": "pending"},
+    {"step": "Implement fix addressing root cause", "status": "pending"},
+    {"step": "Verify fix with reproduction test", "status": "pending"},
+    {"step": "Run full test suite", "status": "pending"},
+    {"step": "Document findings", "status": "pending"}
+  ]
+```
+
+Then execute each step, updating status to `in_progress` before starting and `completed` after finishing.
+
 ## Debugging Process
 
 ### Step 1: Reproduce
