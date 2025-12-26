@@ -169,28 +169,3 @@ All acceptance scenarios and edge cases listed above MUST be:
 
 Every acceptance scenario (US#-AS#) listed above will have a corresponding automated test that validates the expected outcome matches the "Then" clause (Constitution Principle VIII).
 
-### Testing Requirements
-
-Implementation MUST follow Constitution Testing Principles:
-
-- **I. Integration Testing (No Mocking)**: Real PostgreSQL via testcontainers (NO mocking in implementation code), test isolation with table truncation, fixtures via GORM. Mocking ONLY in test code (`*_test.go`) for external systems with written justification. Mock implementations NEVER in production code files.
-- **II. Table-Driven Design**: Test cases as slices of structs with descriptive `name` fields, execute using `t.Run(testCase.name, func(t *testing.T) {...})`
-- **III. Comprehensive Edge Case Coverage**: All edge cases listed above MUST have corresponding tests (input validation, boundary conditions, auth, data state, database, HTTP)
-- **IV. ServeHTTP Endpoint Testing**: Tests call root mux ServeHTTP (NOT individual handlers) using `httptest.ResponseRecorder`, identical routing configuration from shared routes package, HTTP path patterns, `r.PathValue()` for parameters
-- **V. API Data Structures (Schema-First Design)**: OpenAPI with ogen - generate Go types and `Handler` interface via `go run github.com/ogen-go/ogen/cmd/ogen@latest`. **Services implement `Handler` interface in `services/` package (NEVER in handlers/)**. Tests MUST use generated structs (NO `map[string]interface{}`), compare using `cmp.Diff()` (NO `==`, `reflect.DeepEqual`, or individual field checks). Expected values MUST be derived from TEST FIXTURES (request data, database fixtures, config). Copy from response ONLY for truly random fields: UUIDs, timestamps, crypto-rand tokens.
-- **VI. Continuous Test Verification**: Tests MUST be executed after EVERY code change. Run `go test -v ./...` and `go test -v -race ./...` for concurrency safety. Tests MUST pass before commit. Test failures MUST be fixed immediately (NO skipping/disabling tests).
-- **VII. Root Cause Tracing (Debugging Discipline)**: When problems occur, MUST trace backward through call chain to find root cause. Distinguish symptoms from root causes. Fixes MUST address source, NOT work around symptoms. Test cases MUST NOT be removed or weakened. Use debuggers and logging to understand control flow.
-- **VIII. Acceptance Scenario Coverage (Spec-to-Test Mapping)**: Every user scenario (US#-AS#) in this spec MUST have corresponding automated test. Test case names MUST reference source scenarios (e.g., "US1-AS1: New customer enrolls"). Tests MUST validate complete "Then" clause, not partial behavior.
-- **IX. Test Coverage & Gap Analysis**: Run `go test -coverprofile=coverage.out ./...` and `go tool cover -func=coverage.out` to identify gaps. Target >80% coverage for business logic. Remove dead code if unreachable.
-
-### Architecture Requirements
-
-Implementation MUST follow Constitution System Architecture Principles:
-
-- **X. Service Layer Architecture (Dependency Injection)**: **Services MUST implement ogen-generated `Handler` interface in `services/` package (NEVER in handlers/)**. Services are reusable Go packages with OpenAPI-defined interfaces. External dependencies MUST be injected via builder pattern: `NewService(db).WithLogger(log).Build()`. Service methods MUST use ogen-generated structs for ALL parameters and return types (NO primitives, NO maps). `cmd/main.go` MUST ONLY call services (NEVER `internal/` packages directly). No separate handlers/ package needed - ogen handles HTTP routing/serialization.
-
-- **XI. Distributed Tracing (OpenTracing)**: HTTP endpoints MUST create OpenTracing spans with operation name (e.g., "POST /api/products"). Service methods SHOULD create child spans (e.g., "ProductService.Create"). Database operations: ONE span per transaction (NOT per SQL query - too much overhead). External calls (HTTP, gRPC) MUST propagate trace context. Errors MUST set `span.SetTag("error", true)`. Spans MUST include tags: `http.method`, `http.url`, `http.status_code`. Development/Tests use `opentracing.NoopTracer{}`, Production configured from environment variables.
-
-- **XII. Context-Aware Operations**: Service methods MUST accept `context.Context` as first parameter. HTTP handlers MUST use `r.Context()`. Database operations MUST use `db.WithContext(ctx)`. External HTTP calls MUST use `http.NewRequestWithContext(ctx, ...)`. Long-running operations MUST check context cancellation periodically. Tests MUST verify context cancellation behavior. **Rationale**: Enables timeout handling, graceful cancellation, trace propagation, prevents resource leaks.
-
-- **XIII. Comprehensive Error Handling**: Two-layer strategy with environment-aware details. **Service Layer**: Sentinel errors (package-level vars) with `fmt.Errorf("%w")` wrapping for error breadcrumb trail. **HTTP Layer**: Singleton error code struct with automatic service error mapping via `HandleServiceError()` (NO switch statements). **Environment-Aware Details**: ErrorResponse includes `details` field with full error chain by default; hidden when `HIDE_ERROR_DETAILS=true`. `RespondWithError(w, errCode, err)` always passes original error. **Testing**: ALL errors (sentinel + HTTP codes) MUST have test cases. Error assertions MUST use error code definitions (NOT literal strings).

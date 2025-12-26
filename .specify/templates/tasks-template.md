@@ -21,8 +21,13 @@ description: "Task list template for feature implementation"
 
 - **OpenAPI**: `api/openapi/` (API contract definitions - YAML preferred, ErrorResponse MUST be defined here)
 - **Generated Code**: `api/gen/<domain>/` (ogen generated Go types and server interfaces)
-- **Services**: `services/` (PUBLIC - implements ogen Handler interface)
-- **Handlers**: `handlers/` (PUBLIC - server setup with ErrorHandler, error codes)
+- **Services**: `services/` (PUBLIC - OgenHandler + domain services)
+  - `ogen_handler.go` - Implements ogen `Handler` interface, delegates to domain services
+  - `[entity]_service.go` - Domain service interface + implementation (business logic)
+- **Handlers**: `handlers/` (PUBLIC - router setup with ErrorHandler)
+  - `routes.go` - `NewRouter()` builder that creates ogen server with ErrorHandler
+  - `error_handler.go` - ogen ErrorHandler implementation
+  - `error_codes.go` - Error code definitions
 - **Tests**: `tests/` (SEPARATE package for integration tests with testutil helpers)
 - **Models**: `internal/models/` (GORM - internal only)
 
@@ -61,8 +66,9 @@ description: "Task list template for feature implementation"
 - [ ] T012 [P] Define ErrorResponse in `api/openapi/<domain>.yaml`, regenerate with ogen
 - [ ] T013 [P] Create `handlers/error_codes.go` with ErrorCode struct and Errors singleton
 - [ ] T014 [P] Create `handlers/error_handler.go` with `OgenErrorHandler()` and `mapServiceError()`
-- [ ] T015 [P] Create `handlers/server.go` with `NewServer()` wrapper using `api.WithErrorHandler()`
+- [ ] T015 [P] Create `handlers/routes.go` with `NewRouter()` builder using `api.WithErrorHandler()`
 - [ ] T016 Create `services/migrations.go` with `AutoMigrate()` function
+- [ ] T017 Create `services/ogen_handler.go` skeleton (implements `api.Handler`, delegates to domain services)
 
 ---
 
@@ -86,7 +92,8 @@ description: "Task list template for feature implementation"
 ### Step 3: Implementation (Green) 🟢
 
 - [ ] T045 [P] [US1] Create model in `internal/models/`, errors in `services/errors.go`, HTTP codes in `handlers/error_codes.go`
-- [ ] T046 [US1] Implement service in `services/[entity]_service.go` (implements ogen Handler interface)
+- [ ] T046 [US1] Implement domain service in `services/[entity]_service.go` (interface + implementation with business logic)
+- [ ] T047 [US1] Update `services/ogen_handler.go` to delegate to domain service
 - [ ] T048 [US1] Update `services/migrations.go` with new models
 - [ ] T049 [US1] Add OpenTracing spans to service methods
 - [ ] T050 [US1] **RUN TESTS** - Verify PASS (green) ✅
@@ -112,7 +119,7 @@ description: "Task list template for feature implementation"
 
 - [ ] T080 [US2] OpenAPI → ogen → Generate code (`go generate ./...`)
 - [ ] T081 [US2] Write tests (US2-AS1, US2-AS2 + edge cases) → Verify FAIL ❌
-- [ ] T082 [US2] Implement (model, errors, service, handler, routes) → RUN TESTS → Verify PASS ✅
+- [ ] T082 [US2] Implement (model, errors, domain service, ogen_handler, routes) → RUN TESTS → Verify PASS ✅
 - [ ] T083 [US2] Refactor → Run tests after each change ✅
 - [ ] T084 [US2] Coverage analysis → Verify >80%
 
@@ -173,9 +180,10 @@ description: "Task list template for feature implementation"
 - Tests BEFORE implementation (TDD mandatory, Principle VI)
 - Story complete ONLY when all tests pass
 
-**Code Organization**:
-- Services: PUBLIC packages (implement ogen Handler interface, return generated types)
-- Handlers: PUBLIC `handlers/` package (server setup with ErrorHandler, error codes)
+**Code Organization** (OgenHandler Delegation Pattern):
+- **OgenHandler**: `services/ogen_handler.go` implements ogen `Handler` interface, delegates to domain services
+- **Domain Services**: `services/` package contains interfaces (e.g., `ProductService`) with business logic implementations
+- **Router Builder**: `handlers/routes.go` creates ogen server with ErrorHandler
 - Models: `internal/models/` (GORM, internal only)
 - OpenAPI: `api/openapi/` (API contract definitions, ErrorResponse MUST be defined here)
 - Generated: `api/gen/<domain>/` (ogen generated Go types and server interfaces)
@@ -192,9 +200,19 @@ description: "Task list template for feature implementation"
 - **IX. Coverage >80%**: Run `go test -coverprofile=coverage.out ./...`, analyze with `go tool cover -func=coverage.out`
 
 **Architecture Requirements** (Constitution Principles X-XIII):
-- **X. Service Layer Architecture**: **Services implement ogen-generated `Handler` interface in `services/` package (NEVER in handlers/)**. Services are reusable Go packages with OpenAPI-defined interfaces. **ogen provides built-in validation from OpenAPI schema**. Builder pattern: `NewService(db).WithLogger(log).Build()`. Service methods use ogen-generated structs for ALL parameters/return types (NO primitives, NO maps). `cmd/main.go` uses `handlers.NewServer()` (NOT `api.NewServer()` directly). `handlers/` package provides server setup with ErrorHandler.
+- **X. Service Layer Architecture (OgenHandler Delegation Pattern)**:
+  - `services/ogen_handler.go` implements ogen-generated `Handler` interface and delegates to domain services
+  - Domain services have interfaces (e.g., `ProductService`) with implementations containing business logic
+  - `handlers/routes.go` provides router builder that creates ogen server with ErrorHandler
+  - OgenHandler handles nil-service checks centrally
+  - Services are reusable Go packages with OpenAPI-defined interfaces
+  - **ogen provides built-in validation from OpenAPI schema**
+  - Builder pattern: `NewService(db).WithLogger(log).Build()`
+  - Service methods use ogen-generated structs for ALL parameters/return types (NO primitives, NO maps)
+  - `cmd/main.go` uses `handlers.NewRouter().Build()` (NOT `api.NewServer()` directly)
+  - Data Flow: HTTP (ogen server with ErrorHandler) → OgenHandler (delegates) → Domain Service → GORM Model → Database
 - **XI. Distributed Tracing**: HTTP endpoints create OpenTracing spans with operation name (e.g., "POST /api/products"). Services create child spans. Database: ONE span per transaction (NOT per query). External calls propagate trace context. Errors set `span.SetTag("error", true)`. Dev uses `opentracing.NoopTracer{}`.
 - **XII. Context-Aware Operations**: Service methods accept `context.Context` as first parameter. Handlers use `r.Context()`. Database uses `db.WithContext(ctx)`. External calls use `http.NewRequestWithContext(ctx, ...)`. Long-running ops check cancellation periodically. Tests verify cancellation behavior.
-- **XIII. Error Handling Strategy**: Service Layer defines sentinel errors in `services/errors.go`, wraps with `fmt.Errorf("%w")`. **ErrorResponse MUST be defined in OpenAPI schema** (generated by ogen). `handlers/error_handler.go` implements ogen ErrorHandler, maps service errors via `errors.Is()`. `handlers/server.go` provides `NewServer()` with `api.WithErrorHandler(OgenErrorHandler)`. **Environment-Aware Details**: ErrorResponse includes `details` field with full error chain by default; hidden when `HIDE_ERROR_DETAILS=true`. ALL errors have test cases. Tests use error code definitions (NOT literal strings).
+- **XIII. Error Handling Strategy**: Service Layer defines sentinel errors in `services/errors.go`, wraps with `fmt.Errorf("%w")`. **ErrorResponse MUST be defined in OpenAPI schema** (generated by ogen). `handlers/error_handler.go` implements ogen ErrorHandler, maps service errors via `errors.Is()`. `handlers/routes.go` provides `NewRouter()` builder with `api.WithErrorHandler(OgenErrorHandler)`. **Environment-Aware Details**: ErrorResponse includes `details` field with full error chain by default; hidden when `HIDE_ERROR_DETAILS=true`. ALL errors have test cases. Tests use error code definitions (NOT literal strings).
 
 **Avoid**: Implementing before tests, skipping edge cases, removing tests to pass

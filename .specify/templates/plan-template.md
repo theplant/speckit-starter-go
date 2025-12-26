@@ -38,14 +38,19 @@
 - [ ] **IX. Test Coverage & Gap Analysis**: Run `go test -coverprofile=coverage.out ./...`, analyze with `go tool cover -func=coverage.out`, target >80%, remove dead code if unreachable
 
 ### System Architecture (X)
-- [ ] **X. Service Layer Architecture**: Business logic in Go interfaces (service layer), services MUST NOT depend on HTTP types (only `context.Context` allowed)
+- [ ] **X. Service Layer Architecture (OgenHandler Delegation Pattern)**:
+  - **`services/ogen_handler.go`**: Implements ogen-generated `Handler` interface and delegates to domain services
+  - **Domain Services**: Have interfaces (e.g., `ProductService`) with implementations containing business logic
+  - **`handlers/routes.go`**: Provides router builder that creates ogen server with ErrorHandler
+- [ ] **OgenHandler**: Handles nil-service checks centrally
+- [ ] **Services**: Reusable Go packages with OpenAPI-defined interfaces, MUST NOT depend on HTTP types (only `context.Context` allowed)
 - [ ] **ALL Validation in Services**: ogen provides schema validation, services add business validation
-- [ ] **Package Structure**: Services in public packages (NOT `internal/`) for reusability, `handlers/` provides server setup with ErrorHandler
+- [ ] **Package Structure**: Services in public packages (NOT `internal/`) for reusability
 - [ ] **Builder Pattern**: Services use `NewService(db).WithLogger(log).Build()` (required params in constructor, optional via `With*()` methods)
 - [ ] **Service Method Parameters**: MUST use ogen-generated structs for ALL parameters and return types (NO primitives, NO maps)
-- [ ] **Main Entry Point**: `cmd/main.go` MUST use `handlers.NewServer()` (NOT `api.NewServer()` directly). If needs `internal/` functionality, promote to public service
-- [ ] **Data Flow**: HTTP (ogen server with ErrorHandler) → Service (implements ogen Handler) → GORM Model → Database
-- [ ] **handlers/ Package**: Provides `NewServer()` wrapper with ErrorHandler configuration, error code definitions, error mapping
+- [ ] **Main Entry Point**: `cmd/main.go` MUST use `handlers.NewRouter().Build()` (NOT `api.NewServer()` directly). If needs `internal/` functionality, promote to public service
+- [ ] **Data Flow**: HTTP (ogen server with ErrorHandler) → OgenHandler (delegates) → Domain Service → GORM Model → Database
+- [ ] **handlers/ Package**: Provides router builder with ErrorHandler configuration, error code definitions, error mapping
 
 ### Distributed Tracing (XI)
 - [ ] **XI. Distributed Tracing (OpenTracing)**: HTTP endpoints MUST create OpenTracing spans with operation name (e.g., "POST /api/products")
@@ -111,14 +116,15 @@ api/
         ├── oas_server_gen.go
         └── oas_schemas_gen.go
 
-services/                   # PUBLIC package - implements ogen Handler interface
-├── product_service.go     # Implements api.Handler interface
+services/                   # PUBLIC package - OgenHandler + domain services
+├── ogen_handler.go        # Implements api.Handler, delegates to domain services
+├── product_service.go     # Domain service interface + implementation (business logic)
 ├── errors.go              # Sentinel errors (ErrNotFound, ErrDuplicateSKU, etc.)
 └── migrations.go          # AutoMigrate() function for external apps
 
-handlers/                   # PUBLIC package - server setup with ErrorHandler
-├── server.go              # NewServer() wrapper with ErrorHandler
-├── error_handler.go       # ogen ErrorHandler implementation
+handlers/                   # PUBLIC package - router setup with ErrorHandler
+├── routes.go              # NewRouter() builder that creates ogen server with ErrorHandler
+├── error_handler.go       # ogen ErrorHandler implementation (OgenErrorHandler)
 └── error_codes.go         # Error code definitions mapping to services.Err*
 
 tests/                      # SEPARATE package for integration tests
@@ -141,7 +147,8 @@ service-a/
 │   ├── openapi/          # OpenAPI specifications (SINGLE SOURCE OF TRUTH)
 │   └── gen/              # ogen generated code
 │       └── [SERVICE]/    # Service name
-├── services/              # Implements ogen Handler interface
+├── services/              # OgenHandler + domain services
+├── handlers/              # Router builder with ErrorHandler
 ├── tests/                 # SEPARATE package for integration tests
 ├── internal/              # Implementation details
 └── cmd/
@@ -151,7 +158,8 @@ service-b/
 │   ├── openapi/          # OpenAPI specifications (SINGLE SOURCE OF TRUTH)
 │   └── gen/              # ogen generated code
 │       └── [SERVICE]/    # Service name
-├── services/              # Implements ogen Handler interface
+├── services/              # OgenHandler + domain services
+├── handlers/              # Router builder with ErrorHandler
 ├── tests/                 # SEPARATE package for integration tests
 ├── internal/              # Implementation details
 └── cmd/
@@ -165,13 +173,15 @@ shared/                    # Shared libraries across services
 **Structure Decision**: [Document the selected structure and reference the real
 directories captured above]
 
-**Architecture** (Constitution Principle X):
-- Services: PUBLIC packages (implement ogen Handler interface, return generated types)
-- Handlers: PUBLIC `handlers/` package (server setup with ErrorHandler, error codes)
+**Architecture** (Constitution Principle X - OgenHandler Delegation Pattern):
+- **OgenHandler**: `services/ogen_handler.go` implements ogen `Handler` interface, delegates to domain services
+- **Domain Services**: `services/` package contains interfaces (e.g., `ProductService`) with business logic implementations
+- **Router Builder**: `handlers/routes.go` creates ogen server with ErrorHandler
 - Models: `internal/models/` (GORM only, never exposed)
 - Generated types: PUBLIC `api/gen/` (external apps need these)
 - `AutoMigrate()`: Exported in `services/migrations.go`
 - ErrorResponse: MUST be defined in OpenAPI schema (generated by ogen)
+- External apps can import domain services directly or use OgenHandler for full API compatibility
 
 ## Testing Strategy
 
@@ -189,7 +199,7 @@ TDD workflow (Constitution Development Workflow):
 
 - [ ] T080 [US2] Define API contract (OpenAPI) → Generate Go code with ogen
 - [ ] T081 [US2] Write tests (US2-AS1, US2-AS2 + edge cases) → Verify FAIL 
-- [ ] T082 [US2] Implement (model, errors, service, handler, routes) → RUN TESTS → Verify PASS 
+- [ ] T082 [US2] Implement (model, errors, domain service, ogen_handler, routes) → RUN TESTS → Verify PASS 
 - [ ] T083 [US2] Refactor → Run tests after each change 
 - [ ] T084 [US2] Coverage analysis → Verify >80%
 
@@ -203,9 +213,12 @@ TDD workflow (Constitution Development Workflow):
   //go:generate go run github.com/ogen-go/ogen/cmd/ogen@latest --target . --clean ../../openapi/<domain>.yaml
   ```
 - Generate Go code: `go generate ./...`
-- **Implement the generated `Handler` interface in `services/` package (NEVER in handlers/)**
+- **Create `services/ogen_handler.go`** that implements ogen `Handler` interface and delegates to domain services
+- **Create domain services** with interfaces (e.g., `ProductService`) containing business logic
+- **Create `handlers/routes.go`** with router builder that creates ogen server with ErrorHandler
 - Use generated types in services and tests
 - Services are reusable Go packages with OpenAPI-defined interfaces
+- External apps can import domain services or use OgenHandler for full API compatibility
 
 ### Integration Testing Requirements
 
@@ -230,7 +243,7 @@ Constitution Principle XIII:
 - **Service Layer**: Sentinel errors (package-level vars in `services/errors.go`, e.g., `var ErrProductNotFound = errors.New("product not found")`), wrap with `fmt.Errorf("context: %w", err)` for breadcrumb trail
 - **HTTP Layer**: ErrorResponse MUST be defined in OpenAPI schema (generated by ogen), error codes in `handlers/error_codes.go`
 - **ErrorHandler**: `handlers/error_handler.go` implements ogen ErrorHandler, maps service errors to HTTP responses via `errors.Is()`
-- **Server Setup**: `handlers/server.go` provides `NewServer()` that configures `api.WithErrorHandler(OgenErrorHandler)`
+- **Router Setup**: `handlers/routes.go` provides `NewRouter()` builder that configures `api.WithErrorHandler(OgenErrorHandler)`
 - **Context Errors**: Check `context.Canceled` (499) and `context.DeadlineExceeded` (504) first
 - **Testing**: ALL errors (sentinel + HTTP codes) MUST have test cases
 - **Error Assertions**: Tests MUST use error code definitions from `handlers/error_codes.go` (NOT literal strings)
