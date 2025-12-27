@@ -345,5 +345,5 @@ func TestProductAPI(t *testing.T) {
 - `/theplant.integration-test` - Integration testing workflow
 - `/theplant.bugfix` - Bug fix with reproduction-first debugging
 - `/theplant.service` - Service layer architecture
-- `/theplant.errors` - Error handling strategy
+- `/theplant.openapi` - OpenAPI code generation with ogen and error handling strategy
 - `/theplant.root-cause-tracing` - Root cause analysis for debugging

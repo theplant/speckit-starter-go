@@ -532,7 +532,7 @@ func TestProductAPI(t *testing.T) {
         setupFixtures func()
         wantStatus    int
         wantProduct   *pb.Product       // For success responses
-        wantErr       *pb.ErrorResponse // For error responses (full struct, not just code)
+        wantErr       *api.ErrorResponse // For error responses - use handlers.Errors.*.Response
     }{
         {
             name:       "US1-AS1: create product with valid data",
@@ -551,9 +551,9 @@ func TestProductAPI(t *testing.T) {
             path:       "/api/v1/products",
             body:       &pb.CreateProductRequest{Name: "", Sku: "SKU-001"},
             wantStatus: http.StatusBadRequest,
-            wantErr: &pb.ErrorResponse{
-                Code:    "MISSING_REQUIRED",
-                Message: "Required field missing",
+            wantErr: &api.ErrorResponse{
+                Code:    handlers.Errors.MissingRequired.Response.Code,
+                Message: handlers.Errors.MissingRequired.Response.Message,
             },
         },
         {
@@ -565,9 +565,9 @@ func TestProductAPI(t *testing.T) {
                 db.Create(&models.Product{Name: "Existing", SKU: "DUP-001"})
             },
             wantStatus: http.StatusConflict,
-            wantErr: &pb.ErrorResponse{
-                Code:    "DUPLICATE_SKU",
-                Message: "SKU already exists",
+            wantErr: &api.ErrorResponse{
+                Code:    handlers.Errors.DuplicateSKU.Response.Code,
+                Message: handlers.Errors.DuplicateSKU.Response.Message,
             },
         },
     }
@@ -615,13 +615,17 @@ func TestProductAPI(t *testing.T) {
             }
             
             if tc.wantErr != nil {
-                var actual pb.ErrorResponse
-                if err := protojson.Unmarshal(rec.Body.Bytes(), &actual); err != nil {
+                var actual api.ErrorResponse
+                if err := json.Unmarshal(rec.Body.Bytes(), &actual); err != nil {
                     t.Fatalf("failed to unmarshal error response: %v", err)
                 }
                 
-                // Compare full error response struct
-                if diff := cmp.Diff(tc.wantErr, &actual, protocmp.Transform()); diff != "" {
+                // Compare error code and message using ErrorCodeMapping definitions
+                // Use cmpopts.IgnoreFields for details (environment-dependent)
+                opts := cmp.Options{
+                    cmpopts.IgnoreFields(api.ErrorResponse{}, "Details"),
+                }
+                if diff := cmp.Diff(tc.wantErr, &actual, opts...); diff != "" {
                     t.Errorf("Error response mismatch (-want +got):\n%s", diff)
                 }
             }
@@ -811,22 +815,34 @@ if diff := cmp.Diff(expected, actual, opts...); diff != "" {
 
 ### Error Response Comparison
 
-```go
-// ✅ CORRECT: Compare full error response
-var errResp pb.ErrorResponse
-protojson.Unmarshal(rec.Body.Bytes(), &errResp)
+**CRITICAL**: Use `handlers.Errors.*` definitions for error assertions - NEVER use literal strings.
 
-expected := &pb.ErrorResponse{
-    Code:    "MISSING_REQUIRED",
-    Message: "Required field missing",
+```go
+// ✅ CORRECT: Use ErrorCodeMapping definitions from handlers package
+var errResp api.ErrorResponse
+json.Unmarshal(rec.Body.Bytes(), &errResp)
+
+// Use the ErrorCodeMapping.Response for expected values
+expected := &api.ErrorResponse{
+    Code:    handlers.Errors.MissingRequired.Response.Code,
+    Message: handlers.Errors.MissingRequired.Response.Message,
 }
 
-if diff := cmp.Diff(expected, &errResp, protocmp.Transform()); diff != "" {
+// Ignore Details field (environment-dependent)
+opts := cmp.Options{
+    cmpopts.IgnoreFields(api.ErrorResponse{}, "Details"),
+}
+if diff := cmp.Diff(expected, &errResp, opts...); diff != "" {
     t.Errorf("Error response mismatch (-want +got):\n%s", diff)
 }
 
+// ❌ WRONG: Using literal strings
+if errResp.Code != "MISSING_REQUIRED" {  // ❌ Literal string - will break if code changes
+    t.Error("wrong error code")
+}
+
 // ❌ WRONG: Only checking code
-if errResp.Code != "MISSING_REQUIRED" {
+if errResp.Code != handlers.Errors.MissingRequired.Response.Code {
     t.Error("wrong error code")
 }
 // Message could be wrong and you'd never know!
@@ -1050,5 +1066,4 @@ tests/
 
 - `/theplant.bugfix` - Bug fix workflow with reproduction-first debugging
 - `/theplant.system-exploration` - Trace code paths before writing tests
-- `/theplant.errors` - Error handling strategy
-- `/theplant.openapi` - OpenAPI code generation with ogen
+- `/theplant.openapi` - OpenAPI code generation with ogen and error handling strategy

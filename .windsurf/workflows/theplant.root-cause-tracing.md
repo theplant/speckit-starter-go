@@ -228,4 +228,4 @@ When tests fail:
 - `/theplant.bugfix` - Bug fix workflow with reproduction-first debugging
 - `/theplant.integration-test` - Integration testing workflow
 - `/theplant.system-exploration` - Trace code paths before writing tests
-- `/theplant.errors` - Error handling strategy
+- `/theplant.openapi` - OpenAPI code generation with ogen and error handling strategy

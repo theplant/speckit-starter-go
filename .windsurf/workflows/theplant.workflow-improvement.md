@@ -89,7 +89,7 @@ Analyze the current conversation and document:
 | Issue Type | Target Workflow |
 |------------|------------------|
 | API/Type mismatches, ogen patterns | `theplant.openapi.md` |
-| Error handling, ErrorHandler | `theplant.errors.md` |
+| Error handling, ErrorHandler, ErrorCodeMapping | `theplant.openapi.md` |
 | Selector strategies, test patterns | `theplant.e2e-testing.md` |
 | Handler patterns, data persistence | `theplant.msw-mock-backend.md` |
 | Investigation strategies, debugging | `theplant.root-cause-tracing.md` |
