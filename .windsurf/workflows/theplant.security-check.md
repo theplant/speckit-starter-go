@@ -242,15 +242,7 @@ Use `write_to_file` tool to create the report file with the following content:
 - **Description**: What was found
 - **Impact**: Potential security impact
 - **Recommendation**: How to fix
-- **Code Example**:
-
-```go
-// ❌ Current (vulnerable)
-...
-
-// ✅ Recommended (secure)
-...
-```
+- **Code Example**: (show vulnerable vs secure code)
 
 ## Checklist Status
 
@@ -282,7 +274,6 @@ After writing the file, output:
 | 🟢 LOW | Best practice violations, minimal direct risk |
 
 ## AI Agent Requirements
-
 - MUST load security rules from `.specify/memory/security-rules/` before analysis
 - MUST NOT skip rule loading even for "obvious" checks
 - MUST reference specific Principle names (e.g., `Principle CSRF_PROTECTION`)
@@ -292,8 +283,4 @@ After writing the file, output:
 - SHOULD offer to implement fixes after report
 - MUST NOT modify code without explicit user approval
 
-## See Also
 
-- `/theplant.integration-test` - Write integration tests for security fixes
-- `/theplant.bugfix` - Bug fix workflow with reproduction-first debugging
-- `/theplant.root-cause-tracing` - Trace security issues to root cause
