@@ -1,5 +1,10 @@
 ---
 description: Setup Go service with confx configuration management, lifecycle-based dependency injection, and provider pattern (with mandatory checkpoints).
+handoffs:
+  - label: HTTP/gRPC Serving Setup
+    agent: theplant.http-grpc-setup
+    prompt: Setup HTTP and gRPC serving for the service
+    send: true
 ---
 
 ## User Input
@@ -266,277 +271,14 @@ Each component should be a provider function following these rules:
 
 3. **Provider categories**
 
-   | Category              | Examples                    | Notes                               |
-   | --------------------- | --------------------------- | ----------------------------------- |
-   | **Infrastructure**    | Logger, ErrorNotifier       | Usually no lifecycle hooks          |
-   | **Data Layer**        | Database, Cache, MessageBus | Register cleanup in lifecycle       |
-   | **External Clients**  | gRPC clients, HTTP clients  | May need connection management      |
-   | **Business Services** | Domain services             | Depend on data layer                |
-   | **Servers**           | HTTP server, gRPC server    | See gRPC/HTTP Serving Rules below   |
-   | **One-time Tasks**    | Migrator, Seeder            | Return marker type after completion |
-
-#### gRPC Serving Rule
-
-gRPC serving setup follows a standard pattern with listener, server, and interceptor chain:
-
-```go
-// SetupGRPCServing combines listener and server setup as a provider group
-var SetupGRPCServing = []any{
-    SetupGRPCListener,
-    SetupGRPCServer,
-}
-
-// SetupGRPCListener creates a TCP listener for gRPC server
-// The listener is managed by lifecycle for graceful shutdown
-func SetupGRPCListener(lc *lifecycle.Lifecycle, conf *Config) (grpcx.Listener, error) {
-    return grpcx.SetupListener(lc, &conf.GRPC)
-}
-
-// SetupGRPCConn creates a gRPC client connection to the local gRPC server
-// This is typically used for:
-// - HTTP health check middleware to verify gRPC server health
-// - HTTP-to-gRPC proxying scenarios
-// Note: This connects to the same process's gRPC server via the listener address
-func SetupGRPCConn(lc *lifecycle.Lifecycle, grpcListener grpcx.Listener) (*grpc.ClientConn, error) {
-    return grpcx.SetupConnFactory("grpc-conn")(lc, &grpcx.ConnConfig{
-        Address:             grpcListener.Addr().String(),
-        LoadBalancingPolicy: grpcx.LoadBalancingPolicyPickFirst,
-    })
-}
-
-// SetupGRPCServer creates and configures the gRPC server with interceptor chain
-// Dependencies:
-// - listener: TCP listener for accepting connections
-// - ib: i18n bundle for error message localization
-// - errorNotifier: for reporting errors to external services (e.g., Sentry)
-func SetupGRPCServer(
-    ctx context.Context,
-    lc *lifecycle.Lifecycle,
-    listener grpcx.Listener,
-    ib *i18nx.I18N,
-    errorNotifier errornotifier.Notifier,
-    conf *Config,
-) (*grpc.Server, error) {
-    // Setup health service for Kubernetes probes and load balancer health checks
-    healthSvc := health.NewServer()
-    healthSvc.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
-
-    server, err := grpcx.SetupServerFactory("grpc-server", grpc.ChainUnaryInterceptor(
-        // Health check interceptor: allows health check requests to bypass other interceptors
-        healthz.UnaryServerInterceptor(healthSvc),
-        // Business interceptor chain (see grpcServerInterceptorFactory for details)
-        grpcServerInterceptorFactory(ib, errorNotifier),
-    ))(ctx, lc, listener, &conf.GRPC)
-    if err != nil {
-        return nil, err
-    }
-
-    // Register health service for gRPC health check protocol
-    grpc_health_v1.RegisterHealthServer(server, healthSvc)
-    return server, nil
-}
-
-// grpcServerInterceptorFactory creates the business interceptor chain
-// The chain is executed in order: first interceptor wraps the outermost layer
-//
-// Request flow (outside → inside):
-//   errInter(outer) → normalize → logtracing → statusx → errInter(inner) → handler
-//
-// Response flow (inside → outside):
-//   handler → errInter(inner) → statusx → logtracing → normalize → errInter(outer)
-func grpcServerInterceptorFactory(ib *i18nx.I18N, notifier errornotifier.Notifier) grpc.UnaryServerInterceptor {
-    // Error handling interceptor (used at both outer and inner layers)
-    // - DefaultErrorUnaryServerInterceptor: reports errors to notifier (e.g., Sentry)
-    // - RecoveryUnaryServerInterceptor: recovers from panics and converts to gRPC error
-    errInter := grpcx.ChainUnaryServerInterceptor(
-        grpcx.DefaultErrorUnaryServerInterceptor(notifier),
-        grpcx.RecoveryUnaryServerInterceptor(),
-    )
-
-    inters := []grpc.UnaryServerInterceptor{
-        // [Outer error handler]: Catches errors from all inner interceptors,
-        // reports to error notifier, and ensures panic recovery at outermost layer
-        errInter,
-
-        // [Normalize]: Normalizes request data (e.g., trim whitespace, normalize unicode)
-        // Should run early to ensure all downstream handlers see clean data
-        normalize.GRPCUnaryServerInterceptor(),
-
-        // [Log & Tracing]: Adds request logging and distributed tracing
-        // Creates trace context and logs request/response metadata
-        logtracing.UnaryServerInterceptor(),
-
-        // [Status translation]: Converts internal errors to user-friendly gRPC status
-        // Uses i18n bundle to localize error messages based on client's Accept-Language
-        statusx.UnaryServerInterceptor(ib),
-
-        // [Inner error handler]: Catches errors from business handler,
-        // ensures errors are properly wrapped before status translation
-        errInter,
-    }
-    return grpcx.ChainUnaryServerInterceptor(inters...)
-}
-```
-
-**Key points:**
-
-- Use `grpcx.SetupListener` and `grpcx.SetupServerFactory` for lifecycle management
-- Register health service for Kubernetes probes and load balancer health checks
-- **Interceptor chain design**: error handling wraps both outer and inner layers to ensure:
-  - Outer layer: catches errors from interceptors, final panic recovery
-  - Inner layer: catches business errors before status translation
-- `SetupGRPCConn` creates a client connection to the local gRPC server (for HTTP health check)
-
-#### HTTP Serving Rule
-
-HTTP serving setup includes mux, listener, server, and protobuf-to-HTTP handler:
-
-```go
-// SetupHTTPServing combines all HTTP serving components as a provider group
-// Note: SetupGRPCConn is included because HTTP health check needs to verify gRPC server health
-var SetupHTTPServing = []any{
-    SetupHTTPServeMux,
-    SetupHTTPListener,
-    SetupProttpHandler,
-    SetupHTTPServer,
-    SetupGRPCConn,
-}
-
-// SetupHTTPListener creates a TCP listener for HTTP server
-// The listener is managed by lifecycle for graceful shutdown
-func SetupHTTPListener(lc *lifecycle.Lifecycle, conf *Config) (httpx.Listener, error) {
-    return httpx.SetupListener(lc, &conf.HTTP)
-}
-
-// SetupHTTPServeMux creates a new HTTP request multiplexer
-// This is the base router where all HTTP handlers are registered
-func SetupHTTPServeMux() *http.ServeMux {
-    return http.NewServeMux()
-}
-
-// SetupHTTPServer creates and configures the HTTP server with middleware chain
-// Dependencies:
-// - listener: TCP listener for accepting connections
-// - conn: gRPC client connection for health check middleware
-// - mux: HTTP request multiplexer
-// - prottpHandler: protobuf-to-HTTP bridge handler
-func SetupHTTPServer(
-    ctx context.Context,
-    lc *lifecycle.Lifecycle,
-    listener httpx.Listener,
-    conf *Config,
-    ib *i18nx.I18N,
-    conn *grpc.ClientConn,
-    mux *http.ServeMux,
-    prottpHandler *prottpx.Handler,
-) (http.Handler, *http.Server, error) {
-    // Register prottpHandler as the default handler for all routes
-    // prottpHandler bridges HTTP requests to gRPC-style service handlers
-    mux.Handle("/", prottpHandler)
-
-    // Merge CORS allowed headers from all packages that add custom headers
-    // This ensures browsers can access these headers in cross-origin requests
-    // Each package exports its required headers (e.g., i18nx.AllowHeaders for Accept-Language)
-    conf.HTTP.Security.CORS.AllowedHeaders = lo.Uniq(
-        slices.Concat(
-            conf.HTTP.Security.CORS.AllowedHeaders,
-            i18nx.AllowHeaders,    // i18n headers (Accept-Language, etc.)
-            statusx.AllowHeaders,  // status headers for error details
-            auth.AllowHeaders,     // auth headers (Authorization, etc.)
-            challenge.AllowHeaders, // challenge headers for MFA/verification
-        ),
-    )
-
-    // HTTP middleware chain - executed from top to bottom for requests,
-    // bottom to top for responses
-    //
-    // Request flow (outside → inside):
-    //   DefaultMiddleware → healthz → NoStore → Security → Cookieize → normalize → handler
-    handler := hook.Chain(
-        // [Default middleware]: Adds request ID, logging, panic recovery
-        // Provides basic observability and error handling for all requests
-        server.DefaultMiddleware(kitlog.Default()),
-
-        // [Health check]: Handles /healthz endpoint, checks gRPC server health via conn
-        // Returns 200 if healthy, 503 if unhealthy - used by Kubernetes probes
-        healthz.HTTPMiddleware(healthz.WithGRPCHealthChecker(conn)),
-
-        // [No-Store]: Sets Cache-Control: no-store header
-        // Prevents browsers and proxies from caching sensitive API responses
-        httpx.NoStore,
-
-        // [Security]: Applies security headers and CORS policy
-        // - CORS: handles preflight requests, validates origins, sets allowed headers
-        // - Security headers: X-Content-Type-Options, X-Frame-Options, etc.
-        httpx.Security(conf.HTTP.Security),
-
-        // [Cookie auth]: Extracts auth token from cookie and sets to Authorization header
-        // Enables cookie-based auth for browser clients while keeping token-based auth internally
-        // Note: This is project-specific, remove if not using cookie-based auth
-        auth.Cookieize(conf.Auth.Cookie),
-
-        // [Normalize]: Normalizes request data (e.g., trim whitespace, normalize unicode)
-        // Should run last before handler to ensure clean data for business logic
-        normalize.HTTPMiddleware,
-    )(mux)
-
-    server, err := httpx.SetupServerFactory("http-server", handler)(ctx, lc, &conf.HTTP, listener)
-    if err != nil {
-        return nil, nil, err
-    }
-
-    return handler, server, nil
-}
-
-// SetupProttpHandler creates a protobuf-to-HTTP bridge handler
-// This allows HTTP clients to call gRPC-style services using JSON/protobuf over HTTP
-//
-// The handler applies gRPC interceptors to HTTP requests, providing:
-// - Same error handling and logging as gRPC
-// - Authentication via JWT and session validation
-//
-// Dependencies:
-// - i18n: for error message localization
-// - notifier: for error reporting
-// - jwt: for token validation
-// - authClient: for session fetching from auth service
-func SetupProttpHandler(i18n *i18nx.I18N, notifier errornotifier.Notifier, jwt *auth.JWT, authClient authv1.AuthServiceClient) *prottpx.Handler {
-    return prottpx.NewHandler(
-        prottpx.ChainUnaryInterceptor(
-            // Reuse the same gRPC interceptor chain for consistent error handling
-            // See grpcServerInterceptorFactory for interceptor details
-            grpcServerInterceptorFactory(i18n, notifier),
-
-            // [Auth interceptor]: Validates JWT token and fetches user session
-            // - JWT: validates token signature and expiration
-            // - SessionFetcher: retrieves full session from auth service
-            // - SessionValidator: custom validation logic (e.g., check session status)
-            // Note: This is project-specific, adjust based on your auth requirements
-            auth.UnaryServerInterceptor(&auth.InterceptorConfig{
-                JWT:            jwt,
-                SessionFetcher: auth.NewSessionFetcherWithClient(authClient),
-                SessionValidator: func(_ context.Context, session *auth.Session) error {
-                    return errors.WithStack(session.Validate())
-                },
-            }),
-        ),
-    )
-}
-```
-
-**Key points:**
-
-- Use `httpx.SetupListener` and `httpx.SetupServerFactory` for lifecycle management
-- `prottpx.Handler` bridges HTTP requests to gRPC-style handlers, enabling JSON/protobuf over HTTP
-- **HTTP middleware chain** (executed top to bottom):
-  - `DefaultMiddleware`: request ID, logging, panic recovery
-  - `healthz`: health check endpoint for Kubernetes probes
-  - `NoStore`: prevents caching of API responses
-  - `Security`: CORS and security headers
-  - `Cookieize`: cookie-to-header auth conversion (project-specific)
-  - `normalize`: request data normalization
-- **CORS headers**: merge required headers from all packages to ensure browser compatibility
-- `SetupGRPCConn` is included for health check middleware to verify gRPC server health
+   | Category              | Examples                    | Notes                                    |
+   | --------------------- | --------------------------- | ---------------------------------------- |
+   | **Infrastructure**    | Logger, ErrorNotifier       | Usually no lifecycle hooks               |
+   | **Data Layer**        | Database, Cache, MessageBus | Register cleanup in lifecycle            |
+   | **External Clients**  | gRPC clients, HTTP clients  | May need connection management           |
+   | **Business Services** | Domain services             | Depend on data layer                     |
+   | **Servers**           | HTTP server, gRPC server    | HaveListener, HaveServe, Have middleware |
+   | **One-time Tasks**    | Migrator, Seeder            | Return marker type after completion      |
 
 4. **One-time task provider pattern** (Migrate)
 
@@ -800,9 +542,9 @@ For each provider, verify ALL applicable rules:
 
 ### Step 5: Create Entry Point
 
-**MUST** use `github.com/spf13/pflag` for command-line flag parsing.
+`confx.Initialize` internally creates a `pflag.FlagSet` and registers a `-c/--config` flag automatically. You do **NOT** need to manually create a `FlagSet` or define a `confPath` variable.
 
-1. **Standard main.go pattern**
+1. **Standard main.go pattern** (for long-running services)
 
    ```go
    package main
@@ -813,7 +555,6 @@ For each provider, verify ALL applicable rules:
        "os"
 
        "github.com/qor5/confx"
-       "github.com/spf13/pflag"
        "github.com/theplant/inject/lifecycle"
 
        "github.com/yourproject/cmd/myservice/setup"
@@ -823,56 +564,71 @@ For each provider, verify ALL applicable rules:
    const envPrefix = "MYAPP_"
 
    func main() {
-       var confPath string
-       flagSet := pflag.NewFlagSet(os.Args[0], pflag.ContinueOnError)
-       flagSet.SortFlags = false
-       flagSet.StringVarP(&confPath, "config", "c", "", "Path to config yaml file")
-
-       confLoader, err := app.InitializeConfig(
-           confx.WithEnvPrefix(envPrefix),
-           confx.WithFlagSet(flagSet),
-       )
+       confLoader, err := app.InitializeConfig(confx.WithEnvPrefix(envPrefix))
        if err != nil {
            log.Fatalf("Failed to initialize config: %v", err)
        }
 
-       providers := []any{
+       if err := lifecycle.Serve(context.Background(),
            lifecycle.SetupSignal,
            func(ctx context.Context) (*app.Config, error) {
-               return confLoader(ctx, confPath)
+               return confLoader(ctx, "")
            },
            setup.Setup,
-       }
-
-       if err := lifecycle.Serve(context.Background(), providers...); err != nil {
+       ); err != nil {
            log.Fatalf("Failed to serve: %v", err)
+           os.Exit(1)
        }
    }
    ```
 
-2. **Separate command pattern** (e.g., migrate-only)
+2. **Separate command pattern** (e.g., migrate-only, one-shot tasks)
 
    ```go
    // cmd/migrate/main.go
+   package main
+
+   import (
+       "context"
+       "log"
+       "log/slog"
+
+       "github.com/qor5/confx"
+       "github.com/qor5/x/v3/gormx"
+
+       "github.com/yourproject/pkg/app"
+   )
+
+   const envPrefix = "MYAPP_"
+
    func main() {
-       // ... config setup same as above
+       ctx := context.Background()
 
-       providers := []any{
-           func(ctx context.Context) (*Config, error) {
-               return confLoader(ctx, confPath)
-           },
-           SetupDatabase,
-           Migrate,
+       confLoader, err := app.InitializeMigrateConfig(confx.WithEnvPrefix(envPrefix))
+       if err != nil {
+           log.Fatalf("Failed to initialize config: %v", err)
        }
 
-       lc := lifecycle.New()
-       if err := lc.Provide(providers...); err != nil {
-           log.Fatalf("Failed to provide: %v", err)
+       conf, err := confLoader(ctx, "")
+       if err != nil {
+           log.Fatalf("Failed to load config: %v", err)
        }
-       if err := lc.Start(context.Background()); err != nil {
-           log.Fatalf("Failed to start: %v", err)
+
+       db, closer, err := gormx.Open(ctx, &conf.Database)
+       if err != nil {
+           log.Fatalf("Failed to open database: %v", err)
        }
-       // Migrate completed, exit
+       defer func() {
+           if err := closer.Close(); err != nil {
+               slog.Error("Failed to close database connection", "error", err)
+           }
+       }()
+
+       if _, err = app.Migrate(ctx, db, &conf.Ledger); err != nil {
+           log.Fatalf("Failed to run migrations: %v", err)
+       }
+
+       slog.Info("Migrations completed successfully")
    }
    ```
 
@@ -882,10 +638,11 @@ For each provider, verify ALL applicable rules:
 
 1. **main.go verification**:
 
-   - [ ] Uses `github.com/spf13/pflag` for flag parsing
-   - [ ] Does NOT call `pflag.Parse()` manually
-   - [ ] Includes `lifecycle.SetupSignal` for graceful shutdown
-   - [ ] Config loaded via `confLoader(ctx, confPath)`
+   - [ ] Does NOT manually create `pflag.FlagSet` (confx handles this internally)
+   - [ ] Does NOT call `pflag.Parse()` manually (confx handles this internally)
+   - [ ] Does NOT define `confPath` variable (confx registers `-c/--config` automatically)
+   - [ ] Passes empty string to confLoader: `confLoader(ctx, "")`
+   - [ ] For services: includes `lifecycle.SetupSignal` for graceful shutdown
    - [ ] No business logic in main.go
 
 2. **Output to user**:
@@ -894,9 +651,11 @@ For each provider, verify ALL applicable rules:
    ## Step 5 Entry Point Verification
 
    - File: [path]
-   - Uses pflag: ✅/❌
-   - Manual pflag.Parse(): NO ✅ / YES ❌
-   - Has lifecycle.SetupSignal: ✅/❌
+   - Manual pflag.FlagSet creation: NO ✅ / YES ❌
+   - Manual pflag.Parse() call: NO ✅ / YES ❌
+   - Manual confPath variable: NO ✅ / YES ❌
+   - Passes empty string to confLoader: ✅/❌
+   - Has lifecycle.SetupSignal (services only): ✅/❌/N/A
    - Business logic in main: NO ✅ / YES ❌
    ```
 
