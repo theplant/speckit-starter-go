@@ -34,6 +34,16 @@ if !allowedLanguages[lang] { return error }
 **Detection Pattern**:
 ```go
 // ❌ No length check before DB save
+ValidateFunc(func(in presets.ValidateFunc) presets.ValidateFunc {
+    return func(obj any, ctx *web.EventContext) (err web.ValidationErrors) {
+        name := obj.GetName()
+        if name == "" {  // Only checks empty, no length limit!
+            err.FieldError("Name", "required")
+        }
+        // Missing: MaxLength check
+    }
+})
+
 // ✅ utf8.RuneCountInString(input) <= maxLen
 // ✅ r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 ```

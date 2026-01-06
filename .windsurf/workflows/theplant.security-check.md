@@ -154,6 +154,14 @@ grep_search("POST|PUT|DELETE|PATCH") → then check if CSRF validation exists
 | 2 | ... | ... | ✅/❌ | file:line | ... |
 ```
 
+#### 4.5 Check for Missing Validations
+ 
+For LENGTH_LIMITS principle:
+1. Find all `ValidateFunc` or `Validate()` methods
+2. Identify string fields being validated
+3. Check if each has `utf8.RuneCountInString` or `len()` check
+4. Report missing length validations
+
 **DO NOT proceed to Step 5 until this checkpoint table is output.**
 
 ### Step 5: Generate Findings Report
@@ -222,7 +230,8 @@ Use `write_to_file` tool to create the report file with the following content:
 | 🟠 HIGH | X |
 | 🟡 MEDIUM | X |
 | 🟢 LOW | X |
-| ✅ PASSED | X |
+
+> **Note**: Summary only counts **findings** (issues found).
 
 ## Findings
 
