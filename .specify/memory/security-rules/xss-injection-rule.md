@@ -1,183 +1,117 @@
 # XSS & Injection Security Rules
 
-Based on Penetration Test Findings:
-- 5.2: Email template stored XSS (High, CVSS 8.6)
-- 5.4: Client-side template injection via Vue.js (Medium)
+## Principle OUTPUT_ENCODING
 
-## Principle OUTPUT_ENCODING. Contextual Output Encoding
+**Requirements**:
+- HTML output → use `html/template` (NOT `text/template`)
+- Direct output → use `html.EscapeString()`
+- NEVER use `fmt.Fprintf(w, "<div>%s</div>", userInput)`
 
-All user-controlled content MUST be properly encoded before output:
-
-- HTML context: Use HTML entity encoding (`&lt;`, `&gt;`, `&amp;`, `&quot;`, `&#x27;`)
-- JavaScript context: Use JavaScript Unicode encoding
-- URL context: Use URL encoding (`%XX`)
-- CSS context: Use CSS encoding
-- JSON context: Ensure proper JSON serialization with escaping
-- Content MUST be encoded based on output context (NOT input-time sanitization alone)
-
-**ASVS Requirements**:
-- V5.3.4 – Verify that output encoding is consistently applied to all untrusted HTML input
-- V5.1.1 – Verify that output encoding is applied consistently to dynamic content
-
-**Rationale**: XSS vulnerabilities allow attackers to execute scripts in victims' browsers, leading to session hijacking, data theft, and privilege escalation.
-
-### Go Implementation Example
-
+**Detection Pattern**:
 ```go
-import "html/template"
-
-// ✅ CORRECT: Using html/template with automatic escaping
-tmpl := template.Must(template.New("page").Parse(`
-    <div>Hello, {{.Username}}</div>
-`))
-tmpl.Execute(w, data) // Automatically escapes HTML
-
-// ✅ CORRECT: Manual HTML escaping
-import "html"
-safeContent := html.EscapeString(userInput)
-
-// ❌ WRONG: Direct string concatenation
-fmt.Fprintf(w, "<div>Hello, %s</div>", userInput) // XSS vulnerable!
-
-// ❌ WRONG: Using text/template for HTML
-import "text/template" // NO! Use html/template for HTML output
+// ❌ text/template, fmt.Fprintf with user input
+// ✅ html/template auto-escapes: {{.UserInput}}
 ```
 
-## Principle HTML_SANITIZATION. HTML Content Sanitization
+## Principle HTML_SANITIZATION
 
-When HTML input is required (e.g., rich text editors, email templates):
+**Requirements**:
+- Rich text → use allowlist sanitizer (bluemonday)
+- NEVER use blocklist (`strings.ReplaceAll(input, "<script>", "")`)
 
-- Use allowlist-based HTML sanitization (NOT blocklist)
-- Strip dangerous tags: `<script>`, `<iframe>`, `<object>`, `<embed>`, `<form>`, `<input>`
-- Strip dangerous attributes: `onclick`, `onerror`, `onload`, `javascript:`, `data:`
-- Strip dangerous CSS: `expression()`, `url()` with external resources
-- Use established sanitization libraries (e.g., bluemonday for Go)
+**Dangerous Elements** (must strip):
+`<script>`, `<iframe>`, `<object>`, `<embed>`, `<form>`, `onclick`, `onerror`, `javascript:`
 
-**Go Implementation Example**:
-
+**Detection Pattern**:
 ```go
-import "github.com/microcosm-cc/bluemonday"
-
-// ✅ CORRECT: Using bluemonday for HTML sanitization
-func sanitizeHTML(input string) string {
-    // Strict policy - only allow basic formatting
-    p := bluemonday.StrictPolicy()
-    return p.Sanitize(input)
-}
-
-// ✅ CORRECT: UGC policy for user-generated content
-func sanitizeUserContent(input string) string {
-    p := bluemonday.UGCPolicy()
-    // Remove any remaining dangerous patterns
-    p.AllowAttrs("href").OnElements("a")
-    p.RequireNoReferrerOnLinks(true)
-    return p.Sanitize(input)
-}
-
-// ❌ WRONG: Blocklist-based sanitization
-func badSanitize(input string) string {
-    // Easily bypassed with variations like <ScRiPt>, <script/>, etc.
-    return strings.ReplaceAll(input, "<script>", "")
-}
+// ❌ template.HTML(userInput) — marks unsafe content as safe
+// ✅ template.HTML(bluemonday.UGCPolicy().Sanitize(userInput))
 ```
 
-## Principle TEMPLATE_INJECTION. Template Injection Prevention
+## Principle TEMPLATE_INJECTION
 
-Server-side and client-side templates MUST be protected from injection:
+**Requirements**:
+- User input → ONLY as template values, NEVER in template code
+- Go: NEVER `template.Parse(userInput)`
+- Vue.js: AVOID `v-html` with user content
 
-- User input MUST NOT be used in template directives
-- Template expressions MUST NOT evaluate user-controlled data
-- Vue.js: Avoid `v-html` with user content; use `{{ }}` with caution for double-encoding
-- Go templates: Never use `template.HTML()` with unsanitized user input
-
-**ASVS Requirements**:
-- V5.2.4 – Verify that the application protects against template injection attacks
-
-**Go Implementation Example**:
-
+**Detection Pattern**:
 ```go
-// ❌ WRONG: Template injection vulnerability
-userTemplate := r.FormValue("template")
-tmpl, _ := template.New("user").Parse(userTemplate) // CRITICAL: User controls template!
-tmpl.Execute(w, data)
-
-// ✅ CORRECT: Fixed templates, user data as values only
-tmpl := template.Must(template.ParseFiles("templates/page.html"))
-tmpl.Execute(w, map[string]string{
-    "UserContent": sanitizeHTML(userInput),
-})
-
-// ❌ WRONG: Marking unsanitized content as safe
-content := template.HTML(userInput) // NEVER do this with user input!
-
-// ✅ CORRECT: Sanitize before marking as safe HTML
-content := template.HTML(bluemonday.UGCPolicy().Sanitize(userInput))
+// ❌ template.New("x").Parse(r.FormValue("tpl")) — user controls template!
+// ✅ template.ParseFiles("fixed.html") — fixed template
 ```
 
-## Principle SQL_INJECTION. SQL Injection Prevention
+## Principle SQL_INJECTION
 
-Database queries MUST use parameterized queries:
+**Requirements**:
+- ALWAYS use parameterized queries: `?` or `$1`
+- NEVER concatenate: `"WHERE id = '" + id + "'"`
+- NEVER use fmt.Sprintf for SQL
 
-- ALWAYS use parameterized queries or prepared statements
-- NEVER concatenate user input into SQL strings
-- ORM methods MUST use proper parameter binding
-- Raw SQL MUST use placeholders (`$1`, `?`, or named parameters)
-
-**Go Implementation Example**:
-
+**Detection Pattern**:
 ```go
-// ✅ CORRECT: Parameterized query with GORM
-db.Where("email = ?", userEmail).First(&user)
-
-// ✅ CORRECT: Parameterized raw SQL
-db.Raw("SELECT * FROM users WHERE email = $1", userEmail).Scan(&user)
-
-// ❌ WRONG: String concatenation
-db.Raw("SELECT * FROM users WHERE email = '" + userEmail + "'").Scan(&user) // SQL INJECTION!
-
-// ❌ WRONG: fmt.Sprintf for SQL
-query := fmt.Sprintf("SELECT * FROM users WHERE email = '%s'", userEmail) // SQL INJECTION!
+// ❌ db.Raw("...'" + userInput + "'...")
+// ❌ fmt.Sprintf("SELECT ... '%s'", userInput)
+// ✅ db.Where("email = ?", userInput)
+// ✅ db.Raw("SELECT ... WHERE id = $1", userInput)
 ```
 
-## Principle COMMAND_INJECTION. Command Injection Prevention
+## Principle COMMAND_INJECTION
 
-System commands MUST NOT include user input:
+**Requirements**:
+- AVOID exec with user input
+- If needed → separate command and arguments
+- NEVER use shell interpolation
 
-- Avoid executing system commands with user input
-- If unavoidable, use strict allowlist validation
-- Use parameterized command execution (separate command and arguments)
-- NEVER use shell interpolation with user input
-
-**Go Implementation Example**:
-
+**Detection Pattern**:
 ```go
-// ✅ CORRECT: Separate command and arguments
-cmd := exec.Command("convert", inputFile, "-resize", "100x100", outputFile)
-
-// ❌ WRONG: Shell command with user input
-cmd := exec.Command("sh", "-c", "convert " + userFilename + " output.jpg") // INJECTION!
+// ❌ exec.Command("sh", "-c", "cmd " + userInput)
+// ✅ exec.Command("cmd", arg1, arg2) — no shell
 ```
 
-## AI Agent Requirements
+## Principle LDAP_INJECTION (ASVS 1.2)
 
-When checking XSS and injection security:
+**Requirements**:
+- LDAP queries → use parameterized/escaped input
+- NEVER concatenate user input into LDAP filters
 
-- MUST verify all user output uses appropriate encoding
-- MUST verify HTML templates use `html/template` (NOT `text/template`)
-- MUST verify HTML sanitization uses allowlist approach (e.g., bluemonday)
-- MUST verify SQL queries use parameterized queries
-- MUST flag any `template.HTML()` usage with user input as CRITICAL
-- MUST flag any string concatenation in SQL as CRITICAL
-- MUST flag any `v-html` usage with user content as HIGH
-- MUST verify no user input in template directives
+**Detection Pattern**:
+```go
+// ❌ fmt.Sprintf("(uid=%s)", userInput)
+// ✅ ldap.EscapeFilter(userInput) or parameterized
+```
 
-## Security Checklist
+## Principle XPATH_INJECTION (ASVS 1.2)
 
-- [ ] All HTML output uses `html/template` or manual escaping
-- [ ] Rich text fields use bluemonday or equivalent sanitization
-- [ ] No `template.HTML()` with unsanitized user input
-- [ ] All SQL uses parameterized queries
-- [ ] No string concatenation in database queries
-- [ ] Vue.js templates avoid `v-html` with user content
-- [ ] Server-side templates don't evaluate user input
-- [ ] Command execution doesn't include user input
+**Requirements**:
+- XPath queries → parameterize or escape input
+- NEVER build XPath from user strings
+
+## Principle DESERIALIZATION (ASVS 1.5)
+
+**Requirements**:
+- Untrusted data → validate before deserialize
+- Avoid native serialization (gob) with untrusted input
+- JSON preferred over binary formats
+- Whitelist allowed types if polymorphic
+
+**Detection Pattern**:
+```go
+// ❌ gob.Decode(untrustedInput, &obj)
+// ✅ json.Unmarshal with struct (typed)
+```
+
+## Checklist
+
+| # | Check | Principle | ASVS | Severity |
+|---|-------|-----------|------|----------|
+| 1 | HTML uses `html/template` | OUTPUT_ENCODING | 1.2.1 | 🔴 CRITICAL |
+| 2 | No `template.HTML(userInput)` | HTML_SANITIZATION | 1.2.1 | 🔴 CRITICAL |
+| 3 | SQL uses parameterized queries | SQL_INJECTION | 1.2.1 | 🔴 CRITICAL |
+| 4 | No string concat in SQL | SQL_INJECTION | 1.2.1 | 🔴 CRITICAL |
+| 5 | Rich text uses bluemonday | HTML_SANITIZATION | 1.3.1 | 🟠 HIGH |
+| 6 | No `v-html` with user content | TEMPLATE_INJECTION | 1.2.1 | 🟠 HIGH |
+| 7 | No user input in template code | TEMPLATE_INJECTION | 1.2.1 | 🔴 CRITICAL |
+| 8 | No shell interpolation | COMMAND_INJECTION | 1.2.1 | 🔴 CRITICAL |
+| 9 | LDAP queries parameterized | LDAP_INJECTION | 1.2.1 | 🔴 CRITICAL |
+| 10 | Safe deserialization (typed JSON) | DESERIALIZATION | 1.5.1 | 🟠 HIGH |

@@ -27,7 +27,8 @@ Call update_plan with:
     {"step": "Identify target code files", "status": "pending"},
     {"step": "Analyze code against security rules", "status": "pending"},
     {"step": "Generate findings report", "status": "pending"},
-    {"step": "Provide fix recommendations", "status": "pending"}
+    {"step": "Provide fix recommendations", "status": "pending"},
+    {"step": "Output security-report.md file", "status": "pending"}
   ]
 ```
 
@@ -110,41 +111,50 @@ find_by_name(Pattern="*.go", SearchDirectory=".")
 
 ### Step 4: Analyze Code Against Rules
 
-For each target file, check against loaded security rules.
+**CRITICAL**: Follow this structured analysis flow for each loaded rule file:
 
-**CSRF & Session Checks** (Principle CSRF_PROTECTION, COOKIE_SECURITY, SESSION_MANAGEMENT):
-- [ ] State-changing endpoints have CSRF token validation
-- [ ] Login endpoint has CSRF protection
-- [ ] Cookies use `SameSite=Strict`, `Secure`, `HttpOnly`
-- [ ] Session regeneration after authentication
+#### 4.1 Read Checklist Table
 
-**XSS & Injection Checks** (Principle OUTPUT_ENCODING, HTML_SANITIZATION, SQL_INJECTION):
-- [ ] HTML output uses `html/template` (not `text/template`)
-- [ ] User content sanitized with bluemonday or equivalent
-- [ ] No `template.HTML()` with unsanitized input
-- [ ] SQL uses parameterized queries
+From the loaded rule file, locate the `## Checklist` section and extract all rows:
 
-**File Upload Checks** (Principle FILE_TYPE_VALIDATION, FILE_SIZE_LIMIT, FILE_STORAGE):
-- [ ] File type validated (extension + magic bytes)
-- [ ] File size limited server-side
-- [ ] Files stored outside web root
-- [ ] Random filenames used
+```markdown
+| # | Check | Principle | ASVS | Severity |
+```
 
-**HTTP Headers Checks** (Principle SECURITY_HEADERS, CSP_POLICY, CORS_POLICY):
-- [ ] Security headers middleware exists
-- [ ] CSP configured
-- [ ] CORS not using wildcard with credentials
+#### 4.2 For Each Checklist Item
 
-**Input Validation Checks** (Principle INPUT_VALIDATION, LENGTH_LIMITS, RATE_LIMITING):
-- [ ] All inputs validated server-side
-- [ ] String length limits enforced
-- [ ] Rate limiting on auth endpoints
-- [ ] URLs validated before use
+1. **Get Principle name** from the `Principle` column
+2. **Locate the `## Principle [NAME]` section** in the same rule file
+3. **Read the Detection Pattern** code examples (❌ wrong vs ✅ correct)
+4. **Search target code** for patterns matching the ❌ wrong examples
+5. **Record finding** if vulnerable pattern found
 
-**Error Handling Checks** (Principle ERROR_MESSAGES, THIRD_PARTY_ERRORS, PANIC_RECOVERY):
-- [ ] Errors don't expose internal details
-- [ ] Third-party errors wrapped
-- [ ] Panic recovery middleware exists
+#### 4.3 Detection Pattern Matching
+
+Use `grep_search` with patterns from Detection Pattern sections:
+
+```
+# Example: For Principle SQL_INJECTION
+grep_search("db.Raw.*\\+|fmt.Sprintf.*SELECT|fmt.Sprintf.*WHERE")
+
+# Example: For Principle CSRF_PROTECTION  
+grep_search("POST|PUT|DELETE|PATCH") → then check if CSRF validation exists
+```
+
+#### 4.4 Output Checkpoint Table
+
+**MUST** output a verification table before proceeding to Step 5:
+
+```markdown
+## 📋 CHECKPOINT: Security Analysis Results
+
+| # | Check | Principle | Status | Location | Notes |
+|---|-------|-----------|--------|----------|-------|
+| 1 | ... | ... | ✅/❌ | file:line | ... |
+| 2 | ... | ... | ✅/❌ | file:line | ... |
+```
+
+**DO NOT proceed to Step 5 until this checkpoint table is output.**
 
 ### Step 5: Generate Findings Report
 
@@ -187,6 +197,71 @@ For each finding:
 4. **Reference the specific security principle**
 
 If user requests, implement the fixes directly.
+
+### Step 7: Output Security Report File
+
+**MUST** save the security report to a markdown file for future reference.
+
+**Output Path**: `specs/<feature-dir>/security-report.md` (if in feature branch) or `security-report.md` (project root)
+
+Use `write_to_file` tool to create the report file with the following content:
+
+```markdown
+# Security Check Report
+
+**Generated**: [YYYY-MM-DD HH:MM]
+**Target**: [file/package/endpoint]
+**Check Type**: [csrf/xss/upload/headers/input/error/all]
+**Rules Applied**: [list of loaded rule files]
+
+## Summary
+
+| Severity | Count |
+|----------|-------|
+| 🔴 CRITICAL | X |
+| 🟠 HIGH | X |
+| 🟡 MEDIUM | X |
+| 🟢 LOW | X |
+| ✅ PASSED | X |
+
+## Findings
+
+### [SEVERITY] Finding Title
+
+- **Location**: `file:line`
+- **Rule**: Principle [PRINCIPLE_NAME] (ASVS X.X.X)
+- **Description**: What was found
+- **Impact**: Potential security impact
+- **Recommendation**: How to fix
+- **Code Example**:
+
+```go
+// ❌ Current (vulnerable)
+...
+
+// ✅ Recommended (secure)
+...
+```
+
+## Checklist Status
+
+| # | Check | Status | Notes |
+|---|-------|--------|-------|
+| 1 | ... | ✅/❌ | ... |
+
+## Next Steps
+
+- [ ] Fix CRITICAL findings immediately
+- [ ] Address HIGH findings before release
+- [ ] Review MEDIUM findings in next sprint
+- [ ] Consider LOW findings for future improvement
+```
+
+After writing the file, output:
+
+```
+📋 Security report saved to: <file-path>
+```
 
 ## Severity Guidelines
 

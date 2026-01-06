@@ -1,164 +1,101 @@
 # CSRF & Session Security Rules
 
-Based on Penetration Test Finding 5.1: CSRF-Based Forced Login Vulnerability (Critical, CVSS 9.1)
+## Principle CSRF_PROTECTION
 
-## Principle CSRF_PROTECTION. Cross-Site Request Forgery Protection
+**Requirements**:
+- POST/PUT/DELETE/PATCH → MUST validate CSRF token
+- Login endpoint → MUST have CSRF protection
+- Token → cryptographically random, single-use, tied to session
+- Transmission → via header `X-CSRF-Token` or hidden field (NOT URL)
+- Missing/invalid token → HTTP 403
 
-All state-changing endpoints MUST implement CSRF protection:
-
-- State-changing requests (POST, PUT, DELETE, PATCH) MUST validate CSRF tokens
-- CSRF tokens MUST be cryptographically random, single-use, and tied to user session
-- Login endpoints MUST implement CSRF protection (prevent forced login attacks)
-- CSRF tokens MUST be transmitted via custom headers or hidden form fields (NOT URL parameters)
-- Server MUST reject requests with missing or invalid CSRF tokens with HTTP 403
-
-**ASVS Requirements**:
-- V4.3.1 – Verify that a CSRF protection mechanism is in place for all state-changing authenticated requests
-- V3.2.1 – Verify that session identifiers are not accepted from requests from different origins
-
-**Rationale**: CSRF attacks force authenticated users to perform unintended actions. Without CSRF protection, attackers can construct malicious pages that cause victims' browsers to submit forged requests.
-
-### Go Implementation Example
-
+**Detection Pattern**:
 ```go
-// ✅ CORRECT: CSRF middleware with token validation
-func CSRFMiddleware(next http.Handler) http.Handler {
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        if r.Method == "POST" || r.Method == "PUT" || r.Method == "DELETE" || r.Method == "PATCH" {
-            token := r.Header.Get("X-CSRF-Token")
-            sessionToken := getSessionCSRFToken(r)
-            if token == "" || !secureCompare(token, sessionToken) {
-                http.Error(w, "CSRF token validation failed", http.StatusForbidden)
-                return
-            }
-        }
-        next.ServeHTTP(w, r)
-    })
+// ❌ WRONG: No CSRF check on state-changing handler
+func Handler(w http.ResponseWriter, r *http.Request) {
+    // Direct processing without token validation
 }
 
-// ❌ WRONG: No CSRF protection on login
-func LoginHandler(w http.ResponseWriter, r *http.Request) {
-    // Directly processing login without CSRF check
-    username := r.FormValue("username")
-    password := r.FormValue("password")
-    // ... authenticate
-}
+// ✅ CORRECT: Validate token from header, compare with session
+r.Header.Get("X-CSRF-Token") // Must match session token
 ```
 
-## Principle ORIGIN_VALIDATION. Origin and Referer Header Validation
+## Principle COOKIE_SECURITY
 
-Sensitive endpoints MUST validate request origin:
+**Required Flags**:
+| Flag | Value | Reason |
+|------|-------|--------|
+| `SameSite` | `Strict` (best) or `Lax` | Prevent cross-site requests |
+| `Secure` | `true` | HTTPS only |
+| `HttpOnly` | `true` | Block JS access |
 
-- Server MUST check `Origin` header matches allowed origins
-- Server MUST check `Referer` header for same-origin requests
-- Cross-origin requests MUST be rejected for sensitive operations
-- Allowed origins MUST be explicitly configured (NO wildcards for sensitive endpoints)
-
-**Go Implementation Example**:
-
+**Detection Pattern**:
 ```go
-// ✅ CORRECT: Origin validation
-func ValidateOrigin(r *http.Request, allowedOrigins []string) bool {
-    origin := r.Header.Get("Origin")
-    if origin == "" {
-        origin = r.Header.Get("Referer")
-    }
-    for _, allowed := range allowedOrigins {
-        if strings.HasPrefix(origin, allowed) {
-            return true
-        }
-    }
-    return false
-}
+// ❌ Missing: SameSite, Secure, HttpOnly not set
+http.SetCookie(w, &http.Cookie{Name: "session", Value: token})
+
+// ✅ All flags set
+http.SetCookie(w, &http.Cookie{..., HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode})
 ```
 
-## Principle COOKIE_SECURITY. Secure Cookie Configuration
+## Principle SESSION_MANAGEMENT
 
-Authentication cookies MUST be configured securely:
+**Requirements**:
+- Session ID → minimum 128 bits entropy
+- After login → regenerate session ID
+- On logout → invalidate server-side
+- Timeout → implement idle and absolute
 
-- Cookies MUST set `SameSite=Strict` (or `Lax` with additional CSRF protection)
-- Cookies MUST set `Secure` flag (HTTPS only)
-- Cookies MUST set `HttpOnly` flag (prevent JavaScript access)
-- Cookies MUST set appropriate `Path` and `Domain` scope
-- Session cookies MUST have reasonable expiration times
-
-**ASVS Requirements**:
-- V3.4.3 – Verify that authentication cookies are set with the SameSite=Strict attribute
-- V3.4.1 – Verify that cookie-based session tokens have the Secure attribute set
-- V3.4.2 – Verify that cookie-based session tokens have the HttpOnly attribute set
-
-**Go Implementation Example**:
-
+**Detection Pattern**:
 ```go
-// ✅ CORRECT: Secure cookie settings
-http.SetCookie(w, &http.Cookie{
-    Name:     "session",
-    Value:    sessionToken,
-    Path:     "/",
-    HttpOnly: true,
-    Secure:   true,
-    SameSite: http.SameSiteStrictMode,
-    MaxAge:   3600, // 1 hour
-})
-
-// ❌ WRONG: Insecure cookie settings
-http.SetCookie(w, &http.Cookie{
-    Name:     "session",
-    Value:    sessionToken,
-    SameSite: http.SameSiteLaxMode, // Allows cross-site POST with cookies
-})
+// ❌ WRONG: Reusing old session after login
+// ✅ CORRECT: invalidateSession(old) → createSession(new)
 ```
 
-## Principle SESSION_MANAGEMENT. Secure Session Management
+## Principle PASSWORD_SECURITY (ASVS 6.2)
 
-Session management MUST follow security best practices:
+**Requirements**:
+- Minimum length → 8 chars (recommend 15+)
+- Maximum → at least 64 chars allowed
+- NO composition rules (uppercase/special NOT required)
+- Check against breached password list (top 3000+)
+- Allow paste and password managers
+- NO periodic rotation (change only if compromised)
+- Hash with Argon2id/bcrypt/scrypt (NOT MD5/SHA256 alone)
 
-- Session IDs MUST be cryptographically random (minimum 128 bits entropy)
-- Session IDs MUST be regenerated after authentication
-- Sessions MUST be invalidated on logout (server-side)
-- Concurrent session limits SHOULD be enforced
-- Session timeout MUST be implemented (idle and absolute)
-
-**Go Implementation Example**:
-
+**Detection Pattern**:
 ```go
-// ✅ CORRECT: Regenerate session after login
-func LoginHandler(w http.ResponseWriter, r *http.Request) {
-    // ... authenticate user
-    
-    // Invalidate old session
-    oldSession := getSession(r)
-    if oldSession != nil {
-        invalidateSession(oldSession.ID)
-    }
-    
-    // Create new session
-    newSessionID := generateSecureToken(32) // 256 bits
-    createSession(newSessionID, userID)
-    setSessionCookie(w, newSessionID)
-}
+// ❌ Weak: short min, composition rules, plain hash
+// ✅ len >= 8, breached check, bcrypt.GenerateFromPassword(..., 12)
 ```
 
-## AI Agent Requirements
+## Principle CREDENTIAL_ERRORS (ASVS 6.3.8)
 
-When checking CSRF and session security:
+**Requirements**:
+- Generic error → "Invalid credentials" (NOT "user not found")
+- Consistent response time (prevent timing attacks)
+- Same behavior for login/register/password-reset
 
-- MUST verify all POST/PUT/DELETE/PATCH endpoints have CSRF token validation
-- MUST verify login endpoint has CSRF protection
-- MUST check cookie settings for Secure, HttpOnly, SameSite flags
-- MUST verify Origin/Referer validation exists for sensitive operations
-- MUST check session regeneration after authentication
-- MUST verify session invalidation on logout
-- MUST NOT approve code that uses `SameSite=None` without explicit justification
-- MUST flag any state-changing endpoint without CSRF protection as CRITICAL
+## Principle SESSION_TIMEOUT (ASVS 7.2)
 
-## Security Checklist
+**Requirements**:
+- Idle timeout → 15-30 min for sensitive apps
+- Absolute timeout → max 12-24 hours
+- Re-auth for sensitive operations
 
-- [ ] All state-changing endpoints validate CSRF tokens
-- [ ] Login endpoint has CSRF protection
-- [ ] Cookies use `SameSite=Strict` or `Lax` with CSRF tokens
-- [ ] Cookies have `Secure` and `HttpOnly` flags
-- [ ] Origin/Referer headers are validated
-- [ ] Sessions are regenerated after login
-- [ ] Sessions are invalidated on logout
-- [ ] Session tokens are cryptographically random
+## Checklist
+
+| # | Check | Principle | ASVS | Severity |
+|---|-------|-----------|------|----------|
+| 1 | State-changing endpoints have CSRF token | CSRF_PROTECTION | 3.5.2 | 🔴 CRITICAL |
+| 2 | Login has CSRF protection | CSRF_PROTECTION | 3.5.2 | 🔴 CRITICAL |
+| 3 | Cookie: SameSite=Strict or Lax | COOKIE_SECURITY | 3.3.1 | 🟠 HIGH |
+| 4 | Cookie: Secure=true | COOKIE_SECURITY | 3.3.1 | 🟠 HIGH |
+| 5 | Cookie: HttpOnly=true | COOKIE_SECURITY | 3.3.1 | 🟠 HIGH |
+| 6 | Session regenerated after login | SESSION_MANAGEMENT | 7.1.1 | 🟠 HIGH |
+| 7 | Session invalidated on logout | SESSION_MANAGEMENT | 7.1.3 | 🟡 MEDIUM |
+| 8 | Password min 8 chars, no composition rules | PASSWORD_SECURITY | 6.2.1 | 🟠 HIGH |
+| 9 | Password checked against breached list | PASSWORD_SECURITY | 6.2.12 | 🟠 HIGH |
+| 10 | Passwords hashed with Argon2id/bcrypt | PASSWORD_SECURITY | 11.4.2 | 🔴 CRITICAL |
+| 11 | Generic auth error messages | CREDENTIAL_ERRORS | 6.3.8 | 🟡 MEDIUM |
+| 12 | Session idle/absolute timeout | SESSION_TIMEOUT | 7.2.1 | 🟡 MEDIUM |

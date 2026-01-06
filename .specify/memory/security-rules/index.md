@@ -1,17 +1,17 @@
 # Security Rules Index
 
-This directory contains security rules based on OWASP categories and findings from penetration testing.
+This directory contains security rules based on OWASP ASVS 5.0 and qor marketing penetration testing findings.
 
 ## Available Security Rule Documents
 
-| Document | OWASP Category | Use When |
-|----------|----------------|----------|
-| `csrf-session-rule.md` | A2:2017 Broken Authentication, A5:2017 Broken Access Control | 检查 CSRF 保护、会话管理、Cookie 安全 |
-| `xss-injection-rule.md` | A7:2017 XSS, A1:2017 Injection | 检查 XSS 防护、模板注入、输出编码 |
-| `file-upload-rule.md` | A6:2017 Security Misconfiguration | 检查文件上传安全、类型验证、大小限制 |
-| `http-headers-rule.md` | A6:2017 Security Misconfiguration | 检查 HTTP 安全头配置（CSP, HSTS, XFO等） |
-| `input-validation-rule.md` | A1:2017 Injection, A7:2017 XSS | 检查输入验证、参数校验、边界检查 |
-| `error-handling-rule.md` | A3:2017 Sensitive Data Exposure | 检查错误处理、敏感信息泄露 |
+| Document | ASVS Chapters | Use When |
+|----------|---------------|----------|
+| `csrf-session-rule.md` | V3, V6, V7 | CSRF, Cookie, Session, Authentication, Password |
+| `xss-injection-rule.md` | V1 | XSS, SQL/LDAP/Command Injection, Deserialization |
+| `file-upload-rule.md` | V5 | File Upload, Type Validation, Path Traversal, Archive |
+| `http-headers-rule.md` | V3, V4, V8, V15 | Security Headers, CSP, CORS, TLS, JWT, API |
+| `input-validation-rule.md` | V2, V9 | Input Validation, Business Logic, Authorization, Access Control |
+| `error-handling-rule.md` | V11, V14, V16 | Error Handling, Logging, Data Protection, Cryptography |
 
 ## Rule Document Structure
 
@@ -49,9 +49,26 @@ Rules are loaded on-demand by the `theplant.security-check` workflow based on th
 /theplant.security-check all      → loads all rules
 ```
 
-## Related Findings
+## Related Standards
 
 These rules are derived from:
+- **OWASP ASVS 5.0** (May 2025) - Primary reference
 - Qor Marketing System Penetration Test Report (2025/12/17)
-- OWASP ASVS 4.0 Requirements
-- OWASP Top 10 2017/2021
+- OWASP Top 10 2021
+
+## ASVS 5.0 Chapter Coverage
+
+| ASVS Chapter | Rule File | Coverage |
+|--------------|-----------|----------|
+| V1 Encoding/Sanitization | `xss-injection-rule.md` | ✅ |
+| V2 Validation/Business Logic | `input-validation-rule.md` | ✅ |
+| V3 Web Frontend | `http-headers-rule.md` | ✅ |
+| V5 File Handling | `file-upload-rule.md` | ✅ |
+| V6 Authentication | `csrf-session-rule.md` | ✅ |
+| V7 Session Management | `csrf-session-rule.md` | ✅ |
+| V8 Self-contained Tokens | `http-headers-rule.md` | ✅ |
+| V9 Authorization | `input-validation-rule.md` | ✅ |
+| V11 Cryptography | `error-handling-rule.md` | ✅ |
+| V14 Data Protection | `error-handling-rule.md` | ✅ |
+| V15 Secure Communication | `http-headers-rule.md` | ✅ |
+| V16 Logging/Error Handling | `error-handling-rule.md` | ✅ |

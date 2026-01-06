@@ -1,258 +1,130 @@
 # HTTP Security Headers Rules
 
-Based on Penetration Test Findings:
-- 5.7: Missing security headers (Medium)
-- 5.10: Cache poisoning risks (Medium)
+## Principle SECURITY_HEADERS
 
-## Principle SECURITY_HEADERS. HTTP Security Headers
+**Required Headers**:
+| Header | Value |
+|--------|-------|
+| `X-Frame-Options` | `DENY` or `SAMEORIGIN` |
+| `X-Content-Type-Options` | `nosniff` |
+| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` |
+| `Content-Security-Policy` | See CSP below |
 
-All HTTP responses MUST include appropriate security headers:
+**Detection**: Look for middleware that sets these headers on all responses.
 
-### Required Headers
+## Principle CSP_POLICY
 
-| Header | Value | Purpose |
-|--------|-------|---------|
-| `Content-Security-Policy` | See below | Prevent XSS, clickjacking, data injection |
-| `X-Frame-Options` | `DENY` or `SAMEORIGIN` | Prevent clickjacking |
-| `X-Content-Type-Options` | `nosniff` | Prevent MIME sniffing |
-| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` | Force HTTPS |
-| `Referrer-Policy` | `strict-origin-when-cross-origin` | Control referrer info |
-| `Permissions-Policy` | Feature restrictions | Limit browser features |
-
-**ASVS Requirements**:
-- V14.4.3 – Verify that a Content Security Policy (CSP) is in place
-- V14.4.4 – Verify that all responses contain X-Content-Type-Options: nosniff
-- V14.4.5 – Verify that a Strict-Transport-Security header is included
-
-**Rationale**: Security headers provide defense-in-depth against common web attacks including XSS, clickjacking, and protocol downgrade attacks.
-
-### Go Implementation Example
-
-```go
-// ✅ CORRECT: Security headers middleware
-func SecurityHeadersMiddleware(next http.Handler) http.Handler {
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        // Prevent clickjacking
-        w.Header().Set("X-Frame-Options", "DENY")
-        
-        // Prevent MIME sniffing
-        w.Header().Set("X-Content-Type-Options", "nosniff")
-        
-        // Force HTTPS (1 year)
-        w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
-        
-        // Control referrer
-        w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
-        
-        // Content Security Policy
-        w.Header().Set("Content-Security-Policy", 
-            "default-src 'self'; "+
-            "script-src 'self'; "+
-            "style-src 'self' 'unsafe-inline'; "+
-            "img-src 'self' data: https:; "+
-            "font-src 'self'; "+
-            "frame-ancestors 'none'; "+
-            "base-uri 'self'; "+
-            "form-action 'self'")
-        
-        // Permissions Policy
-        w.Header().Set("Permissions-Policy", 
-            "geolocation=(), microphone=(), camera=()")
-        
-        next.ServeHTTP(w, r)
-    })
-}
-
-// ❌ WRONG: No security headers
-func badHandler(w http.ResponseWriter, r *http.Request) {
-    // Missing all security headers
-    w.Write([]byte("Hello"))
-}
+**Recommended CSP**:
+```
+default-src 'self'; script-src 'self'; style-src 'self'; 
+img-src 'self' data: https:; frame-ancestors 'none'; 
+base-uri 'self'; form-action 'self'
 ```
 
-## Principle CSP_POLICY. Content Security Policy
+**Rules**:
+- AVOID `'unsafe-inline'` for scripts → use nonces
+- AVOID `'unsafe-eval'` → blocks eval()
+- `frame-ancestors 'none'` → prevents clickjacking
 
-CSP MUST be configured to prevent XSS:
+## Principle CORS_POLICY
 
-- `default-src 'self'` as baseline
-- Avoid `'unsafe-inline'` for scripts (use nonces or hashes)
-- Avoid `'unsafe-eval'` (prevents eval(), Function())
-- `frame-ancestors 'none'` or `'self'` to prevent clickjacking
-- Report violations with `report-uri` or `report-to`
+**Requirements**:
+- `Access-Control-Allow-Origin` → explicit origins, NOT `*` with auth
+- `Access-Control-Allow-Credentials: true` → REQUIRES specific origin
+- INVALID: `Allow-Origin: *` + `Allow-Credentials: true`
 
-**CSP Directives Reference**:
-
-| Directive | Purpose | Recommended Value |
-|-----------|---------|-------------------|
-| `default-src` | Default policy | `'self'` |
-| `script-src` | JavaScript sources | `'self'` (avoid `'unsafe-inline'`) |
-| `style-src` | CSS sources | `'self'` (or `'unsafe-inline'` if needed) |
-| `img-src` | Image sources | `'self' data: https:` |
-| `font-src` | Font sources | `'self'` |
-| `connect-src` | XHR, WebSocket, fetch | `'self'` |
-| `frame-ancestors` | Who can embed | `'none'` |
-| `base-uri` | Base URL restriction | `'self'` |
-| `form-action` | Form submission targets | `'self'` |
-
-**Go Implementation Example**:
-
+**Detection Pattern**:
 ```go
-// ✅ CORRECT: Strict CSP with nonces for inline scripts
-func CSPMiddleware(next http.Handler) http.Handler {
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        nonce := generateSecureNonce()
-        ctx := context.WithValue(r.Context(), "csp-nonce", nonce)
-        
-        csp := fmt.Sprintf(
-            "default-src 'self'; "+
-            "script-src 'self' 'nonce-%s'; "+
-            "style-src 'self' 'nonce-%s'; "+
-            "img-src 'self' data: https:; "+
-            "frame-ancestors 'none'; "+
-            "base-uri 'self'; "+
-            "form-action 'self'; "+
-            "report-uri /csp-report",
-            nonce, nonce)
-        
-        w.Header().Set("Content-Security-Policy", csp)
-        next.ServeHTTP(w, r.WithContext(ctx))
-    })
-}
+// ❌ w.Header().Set("Access-Control-Allow-Origin", "*")
+//    w.Header().Set("Access-Control-Allow-Credentials", "true")
+// ✅ Check origin against allowlist, set specific origin
 ```
 
-## Principle CORS_POLICY. CORS Configuration
+## Principle CACHE_CONTROL
 
-Cross-Origin Resource Sharing MUST be configured securely:
+**Rules**:
+| Content Type | Cache-Control |
+|--------------|---------------|
+| Auth responses | `no-store` |
+| User data | `private, no-cache` |
+| Static assets | `public, max-age=31536000` |
 
-- `Access-Control-Allow-Origin` MUST NOT be `*` for authenticated endpoints
-- Allowed origins MUST be explicitly listed
-- `Access-Control-Allow-Credentials: true` requires specific origin (NOT `*`)
-- Preflight requests (`OPTIONS`) MUST be handled correctly
-- `Access-Control-Allow-Methods` and `Access-Control-Allow-Headers` MUST be restrictive
+## Principle HEADER_INJECTION
 
-**Go Implementation Example**:
+**Requirements**:
+- Redirect URLs → validate against allowlist
+- User input in headers → strip `\r\n`
+- Open redirect = HIGH severity
 
+**Detection Pattern**:
 ```go
-// ✅ CORRECT: Restrictive CORS configuration
-var allowedOrigins = map[string]bool{
-    "https://app.example.com": true,
-    "https://admin.example.com": true,
-}
-
-func CORSMiddleware(next http.Handler) http.Handler {
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        origin := r.Header.Get("Origin")
-        
-        if allowedOrigins[origin] {
-            w.Header().Set("Access-Control-Allow-Origin", origin)
-            w.Header().Set("Access-Control-Allow-Credentials", "true")
-            w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE")
-            w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-CSRF-Token")
-            w.Header().Set("Access-Control-Max-Age", "86400")
-        }
-        
-        if r.Method == "OPTIONS" {
-            w.WriteHeader(http.StatusNoContent)
-            return
-        }
-        
-        next.ServeHTTP(w, r)
-    })
-}
-
-// ❌ WRONG: Wildcard CORS with credentials
-w.Header().Set("Access-Control-Allow-Origin", "*")
-w.Header().Set("Access-Control-Allow-Credentials", "true") // Invalid combination!
+// ❌ http.Redirect(w, r, r.URL.Query().Get("redirect"), 302)
+// ✅ Validate parsed.Host == "" or == r.Host before redirect
 ```
 
-## Principle CACHE_CONTROL. Cache Control Headers
+## Principle TLS_SECURITY (ASVS 15.1)
 
-Sensitive responses MUST have appropriate cache controls:
+**Requirements**:
+- TLS 1.2+ only (disable TLS 1.0, 1.1, SSL)
+- Strong cipher suites (AES-GCM, ChaCha20)
+- Valid certificates (not expired, correct domain)
+- HSTS with long max-age (31536000)
 
-- Authentication responses: `Cache-Control: no-store`
-- User-specific data: `Cache-Control: private, no-cache`
-- Static public assets: `Cache-Control: public, max-age=31536000`
-- API responses with user data: `Cache-Control: no-store`
+## Principle EXTERNAL_RESOURCES (ASVS 3.6)
 
-**Go Implementation Example**:
+**Requirements**:
+- Subresource Integrity (SRI) for external scripts/styles
+- CDN resources → include `integrity` attribute
+- Verify external content hasn't been tampered
 
-```go
-// ✅ CORRECT: No caching for sensitive data
-func sensitiveDataHandler(w http.ResponseWriter, r *http.Request) {
-    w.Header().Set("Cache-Control", "no-store")
-    w.Header().Set("Pragma", "no-cache")
-    // Return sensitive data
-}
+**Detection Pattern**:
+```html
+<!-- ❌ No integrity check -->
+<script src="https://cdn.example.com/lib.js"></script>
 
-// ✅ CORRECT: Cache static assets
-func staticAssetHandler(w http.ResponseWriter, r *http.Request) {
-    w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-    // Serve static file
-}
+<!-- ✅ With SRI -->
+<script src="https://cdn.example.com/lib.js" 
+  integrity="sha384-..." crossorigin="anonymous"></script>
 ```
 
-## Principle HEADER_INJECTION. Header Injection Prevention
+## Principle API_SECURITY (ASVS 4.1)
 
-User input MUST NOT be used in HTTP headers without validation:
+**Requirements**:
+- API versioning in URL or header
+- Consistent error response format
+- Rate limiting per endpoint
+- Request size limits
 
-- Validate and sanitize any user input used in headers
-- Remove or encode newline characters (`\r`, `\n`)
-- Validate redirect URLs against allowlist
-- `Host` and `X-Forwarded-*` headers MUST be validated
+## Principle JWT_SECURITY (ASVS 8.1)
 
-**Go Implementation Example**:
+**Requirements**:
+- Validate signature with correct algorithm
+- Check `exp`, `iat`, `nbf` claims
+- Verify `iss` and `aud` claims
+- NEVER use `alg: none`
+- Secret key → min 256 bits
 
+**Detection Pattern**:
 ```go
-// ✅ CORRECT: Validate redirect URL
-func safeRedirect(w http.ResponseWriter, r *http.Request, targetURL string) {
-    // Only allow relative paths or same-origin
-    parsed, err := url.Parse(targetURL)
-    if err != nil || (parsed.Host != "" && parsed.Host != r.Host) {
-        http.Error(w, "Invalid redirect", http.StatusBadRequest)
-        return
-    }
-    http.Redirect(w, r, targetURL, http.StatusFound)
-}
-
-// ❌ WRONG: Unvalidated redirect
-func badRedirect(w http.ResponseWriter, r *http.Request) {
-    target := r.URL.Query().Get("redirect")
-    http.Redirect(w, r, target, http.StatusFound) // Open redirect!
-}
-
-// ✅ CORRECT: Sanitize header values
-func setCustomHeader(w http.ResponseWriter, value string) {
-    // Remove newlines to prevent header injection
-    sanitized := strings.ReplaceAll(value, "\r", "")
-    sanitized = strings.ReplaceAll(sanitized, "\n", "")
-    w.Header().Set("X-Custom-Header", sanitized)
-}
+// ❌ Trusting alg from token header
+// ✅ Explicitly set expected algorithm in verification
+jwt.Parse(token, keyFunc, jwt.WithValidMethods([]string{"HS256"}))
 ```
 
-## AI Agent Requirements
+## Checklist
 
-When checking HTTP security headers:
-
-- MUST verify security headers middleware exists
-- MUST verify CSP is configured (not just present, but restrictive)
-- MUST verify X-Frame-Options is set
-- MUST verify X-Content-Type-Options is set
-- MUST verify HSTS is configured for production
-- MUST verify CORS doesn't use wildcard with credentials
-- MUST verify sensitive responses have no-store cache control
-- MUST flag missing security headers middleware as HIGH
-- MUST flag `Access-Control-Allow-Origin: *` with credentials as CRITICAL
-
-## Security Checklist
-
-- [ ] Security headers middleware applied to all routes
-- [ ] CSP configured with restrictive policy
-- [ ] X-Frame-Options set to DENY or SAMEORIGIN
-- [ ] X-Content-Type-Options set to nosniff
-- [ ] HSTS enabled for production
-- [ ] Referrer-Policy configured
-- [ ] CORS allows specific origins only
-- [ ] No wildcard CORS with credentials
-- [ ] Sensitive responses not cached
-- [ ] User input not used in headers without validation
-- [ ] Redirect URLs validated
+| # | Check | Principle | ASVS | Severity |
+|---|-------|-----------|------|----------|
+| 1 | Security headers middleware exists | SECURITY_HEADERS | 3.4.1 | 🟠 HIGH |
+| 2 | CSP configured (restrictive) | CSP_POLICY | 3.4.1 | 🟠 HIGH |
+| 3 | X-Frame-Options set | SECURITY_HEADERS | 3.4.1 | 🟡 MEDIUM |
+| 4 | X-Content-Type-Options: nosniff | SECURITY_HEADERS | 3.4.1 | 🟡 MEDIUM |
+| 5 | HSTS enabled (production) | SECURITY_HEADERS | 3.4.1 | 🟡 MEDIUM |
+| 6 | CORS: no wildcard + credentials | CORS_POLICY | 3.5.2 | 🔴 CRITICAL |
+| 7 | Sensitive data: Cache-Control no-store | CACHE_CONTROL | 3.4.1 | 🟡 MEDIUM |
+| 8 | Redirect URLs validated | HEADER_INJECTION | 3.4.1 | 🟠 HIGH |
+| 9 | TLS 1.2+ only | TLS_SECURITY | 15.1.1 | 🟠 HIGH |
+| 10 | External resources have SRI | EXTERNAL_RESOURCES | 3.6.1 | 🟡 MEDIUM |
+| 11 | JWT algorithm explicitly validated | JWT_SECURITY | 8.1.1 | 🔴 CRITICAL |
+| 12 | JWT claims verified (exp, iss, aud) | JWT_SECURITY | 8.1.2 | 🟠 HIGH |
