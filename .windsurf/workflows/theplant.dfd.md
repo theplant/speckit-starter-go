@@ -1,3 +1,7 @@
+---
+description: Create Data Flow Diagrams using Mermaid.js with standard conventions
+---
+
 # DFD Creation Workflow
 
 This document defines the standard workflow and conventions for creating Data Flow Diagrams (DFD) using Mermaid.js.
