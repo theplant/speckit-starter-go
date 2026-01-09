@@ -25,13 +25,17 @@ For complex systems, build the DFD in phases:
 graph LR
     %% Styles
     classDef process fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
+    classDef boundary fill:none,stroke:#333,stroke-dasharray: 5 5;
 
     subgraph External ["External"]
     end
+    class External boundary
     subgraph Security ["Security"]
     end
+    class Security boundary
     subgraph Backend ["Backend"]
     end
+    class Backend boundary
 ```
 
 ### Phase 2: Add Nodes Layer by Layer
@@ -114,12 +118,23 @@ classDef process fill:#e1f5fe,stroke:#01579b,stroke-width:2px,rx:5,ry:5;
 classDef store fill:#fff9c4,stroke:#fbc02d,stroke-width:2px,shape:cylinder;
 classDef gateway fill:#ffccbc,stroke:#bf360c,stroke-width:3px,shape:hexagon;
 classDef entity fill:#f5f5f5,stroke:#616161,stroke-width:2px,shape:rect;
+classDef boundary fill:none,stroke:#333,stroke-dasharray: 5 5;
 ```
 
 - **process** (blue) — APIs, services
 - **store** (yellow) — Databases
 - **gateway** (orange) — Security gates, decision points
 - **entity** (gray) — External entities, clients
+- **boundary** (dashed) — Trust boundaries, subgraph containers
+
+### Trust Boundary Rules
+
+**No nested subgraphs.** Trust boundaries must be flat — there is no such thing as a nested VPC in the real world.
+
+- ✅ `subgraph VPC_A` ... `subgraph VPC_B` (sibling boundaries)
+- ❌ `subgraph VPC_A` containing `subgraph Subnet_A` (nested boundaries)
+
+If you need to group nodes conceptually within a boundary, use comments (`%%`) instead of nested subgraphs.
 
 ### Data Flow IDs
 
@@ -148,6 +163,7 @@ graph LR
     classDef store fill:#fff9c4,stroke:#fbc02d,stroke-width:2px,shape:cylinder;
     classDef gateway fill:#ffccbc,stroke:#bf360c,stroke-width:3px,shape:hexagon;
     classDef entity fill:#f5f5f5,stroke:#616161,stroke-width:2px,shape:rect;
+    classDef boundary fill:none,stroke:#333,stroke-dasharray: 5 5;
 
     %% ==========================================================
     %% 1. External Layer
@@ -156,11 +172,13 @@ graph LR
         direction TB
         S3_Assets["#1 Static Assets"]:::entity
     end
+    class External boundary
 
     subgraph Clients ["Client Applications"]
         Client_Web["#10 Web App"]:::entity
         Client_Mobile["#11 Mobile App"]:::entity
     end
+    class Clients boundary
 
     %% ==========================================================
     %% 2. Security Layer
@@ -168,6 +186,7 @@ graph LR
     subgraph Security ["Security Gates"]
         Gateway_Auth{{"#20 Auth Gateway"}}:::gateway
     end
+    class Security boundary
 
     %% ==========================================================
     %% 3. Backend Layer
@@ -183,6 +202,7 @@ graph LR
         DB_Main[("#40 Main DB")]:::store
         DB_Cache[("#41 Cache")]:::store
     end
+    class Backend boundary
 
     %% ==========================================================
     %% Data Flows
@@ -218,3 +238,4 @@ graph LR
 - [ ] Gateway flows use a/b suffix pattern
 - [ ] ID registry comment is up to date
 - [ ] Comments separate each section
+- [ ] **No nested subgraphs** — all trust boundaries are flat (no subgraph inside subgraph)
