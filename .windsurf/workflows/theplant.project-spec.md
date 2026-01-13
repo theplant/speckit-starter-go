@@ -210,7 +210,7 @@ Given that project description, do this:
 
 ## Output Location
 
-The project specification should be written to: `specs/main-spec.md`
+The project specification should be written to: `specs/main.md`
 
 ## General Guidelines
 
